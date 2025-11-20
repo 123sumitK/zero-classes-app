@@ -10,19 +10,33 @@ export const ResourceView: React.FC<{ user: User }> = ({ user }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    setLoading(true);
-    setTimeout(() => {
-      const all = storageService.getCourses();
-      // Admin sees all. Instructor sees theirs. Students see enrolled.
-      if (user.role === UserRole.ADMIN) {
-        setCourses(all);
-      } else if (user.role === UserRole.INSTRUCTOR) {
-        setCourses(all.filter(c => c.instructorId === user.id));
-      } else {
-        setCourses(all.filter(c => user.enrolledCourseIds.includes(c.id)));
+    let isMounted = true;
+    const fetchResources = async () => {
+      setLoading(true);
+      try {
+        const all = await storageService.getCourses();
+        const safeAll = Array.isArray(all) ? all : [];
+        
+        if (!isMounted) return;
+        
+        if (user.role === UserRole.ADMIN) {
+          setCourses(safeAll);
+        } else if (user.role === UserRole.INSTRUCTOR) {
+          setCourses(safeAll.filter(c => c.instructorId === user.id));
+        } else {
+          // Add Optional Chaining ?. here to prevent crash
+          setCourses(safeAll.filter(c => user.enrolledCourseIds?.includes(c.id)));
+        }
+      } catch (error) {
+        console.error("Failed to load resources", error);
+      } finally {
+        if (isMounted) setLoading(false);
       }
-      setLoading(false);
-    }, 600);
+    };
+
+    fetchResources();
+
+    return () => { isMounted = false; };
   }, [user]);
 
   if (loading) return <div className="p-4"><Skeleton className="h-96 w-full" /></div>;
@@ -34,14 +48,14 @@ export const ResourceView: React.FC<{ user: User }> = ({ user }) => {
         <p className="text-blue-700 text-sm">Access, download, and review materials for your courses.</p>
       </div>
 
-      {courses.length === 0 ? (
+      {(courses || []).length === 0 ? (
         <p className="text-center text-gray-500 py-10">No courses or materials found.</p>
       ) : (
         <div className="grid gap-6">
-          {courses.map(c => (
+          {(courses || []).map(c => (
             <Card key={c.id} title={c.title}>
               <div className="space-y-3">
-                {c.materials.length === 0 ? (
+                {(!c.materials || c.materials.length === 0) ? (
                    <p className="text-sm text-gray-400 italic">No materials uploaded by instructor yet.</p>
                 ) : (
                   c.materials.map(m => (

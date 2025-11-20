@@ -1,227 +1,226 @@
 
+/// <reference types="vite/client" />
+
 import { User, Course, UserRole, ClassSchedule, CourseMaterial } from '../types';
 
-// Initial Seed Data
-const SEED_USERS: User[] = [
-  { id: 'u1', name: 'Admin User', email: 'admin@zero.com', role: UserRole.ADMIN, enrolledCourseIds: [], password: 'password123', mobile: '1234567890', progress: {} },
-  { id: 'u2', name: 'Jane Instructor', email: 'teach@zero.com', role: UserRole.INSTRUCTOR, enrolledCourseIds: [], password: 'password123', mobile: '9876543210', progress: {} },
-  { id: 'u3', name: 'John Student', email: 'student@zero.com', role: UserRole.STUDENT, enrolledCourseIds: ['c1'], password: 'password123', mobile: '5555555555', progress: { 'c1': ['m1'] } },
-];
-
-const SEED_COURSES: Course[] = [
-  {
-    id: 'c1',
-    title: 'Introduction to React Patterns',
-    description: 'Master the art of component composition and hooks.',
-    instructorId: 'u2',
-    price: 49.99,
-    materials: [
-      { id: 'm1', title: 'Week 1 Slides', type: 'PPT', url: '#', uploadedAt: new Date().toISOString() },
-      { id: 'm2', title: 'Hooks Cheat Sheet', type: 'PDF', url: '#', uploadedAt: new Date().toISOString() }
-    ],
-    schedules: [
-      { id: 's1', courseId: 'c1', topic: 'Hooks Deep Dive', date: '2024-11-20', time: '14:00', meetingUrl: 'https://meet.google.com/abc-defg-hij' }
-    ]
-  },
-  {
-    id: 'c2',
-    title: 'Advanced Gemini Integration',
-    description: 'Build AI-powered apps with Google GenAI SDK.',
-    instructorId: 'u2',
-    price: 79.99,
-    materials: [],
-    schedules: []
-  }
-];
-
-const STORAGE_KEYS = {
-  USERS: 'zc_users',
-  COURSES: 'zc_courses',
-  OTP: 'zc_temp_otps' // Temporary storage for mock OTPs
+// API CONFIGURATION
+const getApiUrl = () => {
+  try {
+    // @ts-ignore
+    if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_API_URL) {
+      // @ts-ignore
+      return import.meta.env.VITE_API_URL;
+    }
+  } catch (e) {}
+  try {
+    if (typeof process !== 'undefined' && process.env && process.env.VITE_API_URL) {
+      return process.env.VITE_API_URL;
+    }
+  } catch (e) {}
+  // Use explicit 127.0.0.1 to avoid node localhost resolution issues
+  return 'http://127.0.0.1:3000/api';
 };
 
-// Helper to initialize storage
-const initStorage = () => {
-  if (!localStorage.getItem(STORAGE_KEYS.USERS)) {
-    localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(SEED_USERS));
-  }
-  if (!localStorage.getItem(STORAGE_KEYS.COURSES)) {
-    localStorage.setItem(STORAGE_KEYS.COURSES, JSON.stringify(SEED_COURSES));
-  }
-};
+const API_URL = getApiUrl();
 
-initStorage();
+// Helper: Format User from DB to Frontend
+const formatUser = (u: any): User => ({
+  ...u,
+  id: u._id || u.id,
+  // Ensure enrolledCourses (DB) is mapped to enrolledCourseIds (Frontend) and is always an array
+  enrolledCourseIds: Array.isArray(u.enrolledCourses) ? u.enrolledCourses.map((id: any) => String(id)) : [],
+  progress: u.progress || {}
+});
+
+// Helper: Format Course from DB to Frontend
+const formatCourse = (c: any): Course => ({ 
+  ...c, 
+  id: c._id || c.id,
+  materials: Array.isArray(c.materials) ? c.materials : [],
+  schedules: Array.isArray(c.schedules) ? c.schedules : []
+});
 
 export const storageService = {
-  // --- AUTH & USER ---
-  
-  getUsers: (): User[] => JSON.parse(localStorage.getItem(STORAGE_KEYS.USERS) || '[]'),
-  
-  login: (email: string, password?: string): User | undefined => {
-    const users = JSON.parse(localStorage.getItem(STORAGE_KEYS.USERS) || '[]');
-    // PRODUCTION NOTE: In real backend, use bcrypt.compare(password, user.hash)
-    return users.find((u: any) => u.email === email && u.password === password);
-  },
+  // --- AUTH & OTP ---
 
-  register: (user: Partial<User>): User => {
-    const users = JSON.parse(localStorage.getItem(STORAGE_KEYS.USERS) || '[]');
-    if (users.find((u: any) => u.email === user.email)) throw new Error('User already exists');
-    
-    const newUser = {
-      ...user,
-      id: Math.random().toString(36).substr(2, 9),
-      enrolledCourseIds: [],
-      progress: {}
-    };
-    
-    users.push(newUser);
-    localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
-    return newUser as User;
-  },
-
-  updateUserRole: (userId: string, newRole: UserRole) => {
-    const users = storageService.getUsers();
-    const updated = users.map(u => u.id === userId ? { ...u, role: newRole } : u);
-    localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(updated));
-  },
-
-  toggleProgress: (userId: string, courseId: string, materialId: string): Record<string, string[]> => {
-    const users = storageService.getUsers();
-    const userIndex = users.findIndex(u => u.id === userId);
-    
-    if (userIndex === -1) throw new Error('User not found');
-
-    const user = users[userIndex];
-    const currentProgress = user.progress || {};
-    const courseProgress = currentProgress[courseId] || [];
-    
-    let newCourseProgress;
-    if (courseProgress.includes(materialId)) {
-      newCourseProgress = courseProgress.filter(id => id !== materialId);
-    } else {
-      newCourseProgress = [...courseProgress, materialId];
-    }
-
-    const newProgress = {
-      ...currentProgress,
-      [courseId]: newCourseProgress
-    };
-
-    users[userIndex] = { ...user, progress: newProgress };
-    localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
-    
-    return newProgress;
-  },
-
-  // --- MOCK OTP SYSTEM ---
-  // PRODUCTION NOTE: Replace these with API calls to your backend (e.g., /api/send-otp)
-
-  sendOTP: async (mobile: string): Promise<boolean> => {
-    console.log(`[SMS GATEWAY] Sending OTP to ${mobile}...`);
-    // Mock Generation: Always 1234 for demo, or random
-    const code = '1234'; 
-    const otps = JSON.parse(localStorage.getItem(STORAGE_KEYS.OTP) || '{}');
-    otps[mobile] = code;
-    localStorage.setItem(STORAGE_KEYS.OTP, JSON.stringify(otps));
-    console.log(`[SMS GATEWAY] OTP for ${mobile} is: ${code}`);
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    return true;
-  },
-
-  verifyOTP: async (mobile: string, code: string): Promise<boolean> => {
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    const otps = JSON.parse(localStorage.getItem(STORAGE_KEYS.OTP) || '{}');
-    const validCode = otps[mobile];
-    if (validCode && validCode === code) {
-      delete otps[mobile];
-      localStorage.setItem(STORAGE_KEYS.OTP, JSON.stringify(otps));
+  sendOTP: async (target: string, type: 'email' | 'mobile'): Promise<boolean> => {
+    try {
+      const res = await fetch(`${API_URL}/auth/send-otp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ target, type })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
       return true;
+    } catch (error) {
+      console.error('Send OTP Error:', error);
+      throw error;
     }
-    return false;
   },
 
-  // --- COURSES ---
-
-  getCourses: (): Course[] => JSON.parse(localStorage.getItem(STORAGE_KEYS.COURSES) || '[]'),
-
-  addCourse: (course: Course) => {
-    const courses = storageService.getCourses();
-    courses.push(course);
-    localStorage.setItem(STORAGE_KEYS.COURSES, JSON.stringify(courses));
+  verifyOTP: async (target: string, code: string): Promise<boolean> => {
+    try {
+      const res = await fetch(`${API_URL}/auth/verify-otp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ target, code })
+      });
+      const data = await res.json();
+      if (!res.ok) return false;
+      return data.success;
+    } catch (error) { return false; }
   },
 
-  updateCourse: (courseId: string, updates: Partial<Course>) => {
-    const courses = storageService.getCourses();
-    const updated = courses.map(c => c.id === courseId ? { ...c, ...updates } : c);
-    localStorage.setItem(STORAGE_KEYS.COURSES, JSON.stringify(updated));
-  },
-
-  deleteCourse: (courseId: string) => {
-    const courses = storageService.getCourses();
-    const updated = courses.filter(c => c.id !== courseId);
-    localStorage.setItem(STORAGE_KEYS.COURSES, JSON.stringify(updated));
-  },
-
-  enrollStudent: (userId: string, courseId: string) => {
-    const users = storageService.getUsers();
-    const updatedUsers = users.map(u => {
-      if (u.id === userId && !u.enrolledCourseIds.includes(courseId)) {
-        return { ...u, enrolledCourseIds: [...u.enrolledCourseIds, courseId] };
-      }
-      return u;
+  login: async (email: string, password?: string): Promise<User> => {
+    const res = await fetch(`${API_URL}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password })
     });
-    localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(updatedUsers));
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Login failed');
+    return formatUser(data);
   },
 
-  // --- MATERIALS & SCHEDULES ---
-
-  addMaterial: (courseId: string, material: CourseMaterial) => {
-    const courses = storageService.getCourses();
-    const updated = courses.map(c => c.id === courseId ? { ...c, materials: [...c.materials, material] } : c);
-    localStorage.setItem(STORAGE_KEYS.COURSES, JSON.stringify(updated));
-  },
-
-  deleteMaterial: (courseId: string, materialId: string) => {
-    const courses = storageService.getCourses();
-    const updated = courses.map(c => {
-      if (c.id === courseId) {
-        return { ...c, materials: c.materials.filter(m => m.id !== materialId) };
-      }
-      return c;
+  register: async (user: Partial<User>): Promise<User> => {
+    const res = await fetch(`${API_URL}/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(user)
     });
-    localStorage.setItem(STORAGE_KEYS.COURSES, JSON.stringify(updated));
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Registration failed');
+    return formatUser(data);
   },
 
-  addSchedule: (courseId: string, schedule: ClassSchedule) => {
-    const courses = storageService.getCourses();
-    const updated = courses.map(c => c.id === courseId ? { ...c, schedules: [...c.schedules, schedule] } : c);
-    localStorage.setItem(STORAGE_KEYS.COURSES, JSON.stringify(updated));
+  // --- DATA ACCESS (Defensive) ---
+
+  getUsers: async (): Promise<User[]> => {
+    try {
+      const res = await fetch(`${API_URL}/users`);
+      const data = await res.json();
+      if (!Array.isArray(data)) return [];
+      return data.map(formatUser);
+    } catch (e) { 
+      console.error("Get Users Failed", e);
+      return []; 
+    }
   },
 
-  updateSchedule: (courseId: string, schedule: ClassSchedule) => {
-    const courses = storageService.getCourses();
-    const updated = courses.map(c => {
-      if (c.id === courseId) {
-         const sIdx = c.schedules.findIndex(s => s.id === schedule.id);
-         if (sIdx > -1) {
-             const newSchedules = [...c.schedules];
-             newSchedules[sIdx] = schedule;
-             return { ...c, schedules: newSchedules };
-         }
-      }
-      return c;
+  getCourses: async (): Promise<Course[]> => {
+    try {
+      const res = await fetch(`${API_URL}/courses`);
+      const data = await res.json();
+      if (!Array.isArray(data)) return [];
+      return data.map(formatCourse);
+    } catch (e) { 
+      console.error("Get Courses Failed", e);
+      return []; 
+    }
+  },
+
+  // --- MODIFIERS ---
+
+  updateUserRole: async (userId: string, newRole: UserRole) => {
+    await fetch(`${API_URL}/users/${userId}/role`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ role: newRole })
     });
-    localStorage.setItem(STORAGE_KEYS.COURSES, JSON.stringify(updated));
   },
 
-  deleteSchedule: (courseId: string, scheduleId: string) => {
-    const courses = storageService.getCourses();
-    const updated = courses.map(c => {
-      if (c.id === courseId) {
-        return { ...c, schedules: c.schedules.filter(s => s.id !== scheduleId) };
-      }
-      return c;
+  addCourse: async (course: Course): Promise<Course> => {
+    const { id, ...courseData } = course;
+    const res = await fetch(`${API_URL}/courses`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(courseData)
     });
-    localStorage.setItem(STORAGE_KEYS.COURSES, JSON.stringify(updated));
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to create course');
+    return formatCourse(data);
+  },
+
+  updateCourse: async (courseId: string, updates: Partial<Course>) => {
+    const res = await fetch(`${API_URL}/courses/${courseId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updates)
+    });
+    if (!res.ok) throw new Error('Failed to update course');
+  },
+
+  deleteCourse: async (courseId: string) => {
+    await fetch(`${API_URL}/courses/${courseId}`, { method: 'DELETE' });
+  },
+
+  // --- ATOMIC SUB-DOCUMENT HANDLERS ---
+  
+  addMaterial: async (courseId: string, material: CourseMaterial) => {
+    // Ensure uploadedAt is a string
+    const payload = {
+      ...material,
+      uploadedAt: typeof material.uploadedAt === 'string' ? material.uploadedAt : new Date().toISOString()
+    };
+    
+    const res = await fetch(`${API_URL}/courses/${courseId}/materials`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    
+    const data = await res.json();
+    
+    if (!res.ok) {
+      console.error("Server Upload Error:", data);
+      throw new Error(data.error || `Server error ${res.status}: Failed to upload material`);
+    }
+  },
+
+  deleteMaterial: async (courseId: string, materialId: string) => {
+    const res = await fetch(`${API_URL}/courses/${courseId}/materials/${materialId}`, {
+      method: 'DELETE'
+    });
+    if (!res.ok) throw new Error("Failed to delete material");
+  },
+
+  addSchedule: async (courseId: string, schedule: ClassSchedule) => {
+    const res = await fetch(`${API_URL}/courses/${courseId}/schedules`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(schedule)
+    });
+    if (!res.ok) throw new Error("Failed to add schedule");
+  },
+
+  updateSchedule: async (courseId: string, schedule: ClassSchedule) => {
+    const res = await fetch(`${API_URL}/courses/${courseId}/schedules/${schedule.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(schedule)
+    });
+    if (!res.ok) throw new Error("Failed to update schedule");
+  },
+
+  deleteSchedule: async (courseId: string, scheduleId: string) => {
+    const res = await fetch(`${API_URL}/courses/${courseId}/schedules/${scheduleId}`, {
+      method: 'DELETE'
+    });
+    if (!res.ok) throw new Error("Failed to delete schedule");
+  },
+
+  enrollStudent: async (userId: string, courseId: string) => {
+    const res = await fetch(`${API_URL}/enroll`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, courseId })
+    });
+    if (!res.ok) throw new Error("Enrollment failed");
+  },
+  
+  toggleProgress: (userId: string, courseId: string, materialId: string): any => {
+     // Placeholder for future progress tracking API
+     return {};
   }
 };

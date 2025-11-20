@@ -1,10 +1,10 @@
 
 import React, { useState, useEffect } from 'react';
-import { User, UserRole, Course, ClassSchedule } from '../../types';
+import { User, UserRole, Course, ClassSchedule, CourseMaterial } from '../../types';
 import { storageService } from '../../services/storage';
 import { generateCourseOutline } from '../../services/geminiService';
 import { Button, Input, Select, Card, Skeleton } from '../ui/Shared';
-import { Sparkles, Upload, Video, Trash2, Edit2, Save, X } from 'lucide-react';
+import { Sparkles, Upload, Video, Trash2, Edit2, Save, X, Loader2 } from 'lucide-react';
 
 interface InstructorViewProps {
   user: User;
@@ -21,9 +21,11 @@ export const InstructorView: React.FC<InstructorViewProps> = ({ user, view, show
   const [newCourseDesc, setNewCourseDesc] = useState('');
   const [newCoursePrice, setNewCoursePrice] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
+  const [creatingCourse, setCreatingCourse] = useState(false);
 
   // Manage State
   const [selectedCourseId, setSelectedCourseId] = useState('');
+  const [uploading, setUploading] = useState(false);
   
   // Schedule State
   const [schedDate, setSchedDate] = useState('');
@@ -35,14 +37,24 @@ export const InstructorView: React.FC<InstructorViewProps> = ({ user, view, show
     refreshData();
   }, [user, view]);
 
-  const refreshData = () => {
+  const refreshData = async () => {
     setLoading(true);
-    setTimeout(() => {
-      const all = storageService.getCourses();
-      if (user.role === UserRole.ADMIN) setCourses(all);
-      else setCourses(all.filter(c => c.instructorId === user.id));
+    try {
+      const all = await storageService.getCourses();
+      // Ensure we always have an array
+      const safeAll = Array.isArray(all) ? all : [];
+      
+      if (user.role === UserRole.ADMIN) {
+        setCourses(safeAll);
+      } else {
+        setCourses(safeAll.filter(c => c.instructorId === user.id));
+      }
+    } catch (error) {
+      console.error("Failed to refresh data", error);
+      setCourses([]);
+    } finally {
       setLoading(false);
-    }, 800);
+    }
   };
 
   const handleAICreate = async () => {
@@ -53,10 +65,12 @@ export const InstructorView: React.FC<InstructorViewProps> = ({ user, view, show
     setIsGenerating(false);
   };
 
-  const handleCreateCourse = () => {
+  const handleCreateCourse = async () => {
     if (!newCourseTitle || !newCoursePrice) return;
-    const newCourse: Course = {
-      id: Math.random().toString(36).substr(2, 9),
+    setCreatingCourse(true);
+    
+    const newCourseData: Course = {
+      id: '', // ID will be assigned by server
       title: newCourseTitle,
       description: newCourseDesc,
       instructorId: user.id,
@@ -64,67 +78,104 @@ export const InstructorView: React.FC<InstructorViewProps> = ({ user, view, show
       materials: [],
       schedules: []
     };
-    storageService.addCourse(newCourse);
-    setCourses(prev => [...prev, newCourse]);
-    showToast('Course created successfully', 'success');
-    setNewCourseTitle(''); setNewCourseDesc(''); setNewCoursePrice('');
+
+    try {
+      const createdCourse = await storageService.addCourse(newCourseData);
+      setCourses(prev => [...prev, createdCourse]);
+      showToast('Course created successfully', 'success');
+      setNewCourseTitle(''); setNewCourseDesc(''); setNewCoursePrice('');
+      
+      // Auto-select for material upload
+      setSelectedCourseId(createdCourse.id);
+    } catch (error) {
+      showToast('Failed to create course', 'error');
+    } finally {
+      setCreatingCourse(false);
+    }
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!selectedCourseId) return showToast('Select a course first', 'error');
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!selectedCourseId) {
+        showToast('Please select a course first', 'error');
+        e.target.value = '';
+        return;
+    }
+    
     const file = e.target.files?.[0];
-    if (file) {
-      setTimeout(() => {
-        storageService.addMaterial(selectedCourseId, {
-          id: Math.random().toString(),
-          title: file.name,
-          type: 'PDF',
-          url: '#',
-          uploadedAt: new Date().toISOString()
-        });
-        showToast(`Uploaded ${file.name}`, 'success');
-        refreshData();
-      }, 800);
+    if (!file) return;
+
+    setUploading(true);
+    
+    try {
+        const ext = file.name.split('.').pop()?.toLowerCase();
+        let type: 'PDF' | 'DOCX' | 'PPT' | 'OTHER' = 'OTHER';
+        if (ext === 'pdf') type = 'PDF';
+        else if (['doc', 'docx'].includes(ext || '')) type = 'DOCX';
+        else if (['ppt', 'pptx'].includes(ext || '')) type = 'PPT';
+
+        const newMaterial: CourseMaterial = {
+            id: Math.random().toString(36).substring(7),
+            title: file.name,
+            type: type,
+            url: '#', // Mock URL
+            uploadedAt: new Date().toISOString()
+        };
+
+        await storageService.addMaterial(selectedCourseId, newMaterial);
+        showToast(`Successfully uploaded: ${file.name}`, 'success');
+        await refreshData(); 
+    } catch (e) {
+        console.error(e);
+        showToast('Failed to upload material', 'error');
+    } finally {
+        setUploading(false);
+        e.target.value = '';
     }
   };
 
-  const handleDeleteMaterial = (courseId: string, matId: string) => {
+  const handleDeleteMaterial = async (courseId: string, matId: string) => {
     if (window.confirm('Delete this file?')) {
-      storageService.deleteMaterial(courseId, matId);
-      refreshData();
-      showToast('Material deleted', 'success');
+      try {
+        await storageService.deleteMaterial(courseId, matId);
+        await refreshData();
+        showToast('Material deleted', 'success');
+      } catch (e) {
+        showToast('Failed to delete material', 'error');
+      }
     }
   };
 
-  // Schedule Logic
-  const handleAddSchedule = () => {
+  const handleAddSchedule = async () => {
     if (!selectedCourseId || !schedDate || !schedTime) return;
-    if (editingSchedId) {
-      // Update Mode
-      storageService.updateSchedule(selectedCourseId, {
-        id: editingSchedId,
-        courseId: selectedCourseId,
-        topic: schedTopic,
-        date: schedDate,
-        time: schedTime,
-        meetingUrl: 'https://meet.google.com/mock-updated'
-      });
-      showToast('Schedule updated', 'success');
-      setEditingSchedId(null);
-    } else {
-      // Add Mode
-      storageService.addSchedule(selectedCourseId, {
-        id: Math.random().toString(),
-        courseId: selectedCourseId,
-        topic: schedTopic || 'Class Session',
-        date: schedDate,
-        time: schedTime,
-        meetingUrl: 'https://meet.google.com/mock-link-xyz'
-      });
-      showToast('Class scheduled!', 'success');
+    
+    try {
+      if (editingSchedId) {
+        await storageService.updateSchedule(selectedCourseId, {
+          id: editingSchedId,
+          courseId: selectedCourseId,
+          topic: schedTopic,
+          date: schedDate,
+          time: schedTime,
+          meetingUrl: 'https://meet.google.com/mock-updated'
+        });
+        showToast('Schedule updated', 'success');
+        setEditingSchedId(null);
+      } else {
+        await storageService.addSchedule(selectedCourseId, {
+          id: Math.random().toString(36).substring(7),
+          courseId: selectedCourseId,
+          topic: schedTopic || 'Class Session',
+          date: schedDate,
+          time: schedTime,
+          meetingUrl: 'https://meet.google.com/mock-link-xyz'
+        });
+        showToast('Class scheduled!', 'success');
+      }
+      setSchedDate(''); setSchedTime(''); setSchedTopic('');
+      await refreshData();
+    } catch (e) {
+      showToast('Failed to save schedule', 'error');
     }
-    setSchedDate(''); setSchedTime(''); setSchedTopic('');
-    refreshData();
   };
 
   const startEditSchedule = (s: ClassSchedule) => {
@@ -136,11 +187,15 @@ export const InstructorView: React.FC<InstructorViewProps> = ({ user, view, show
     showToast('Editing schedule above...', 'info');
   };
 
-  const handleDeleteSchedule = (courseId: string, sId: string) => {
+  const handleDeleteSchedule = async (courseId: string, sId: string) => {
     if (window.confirm('Cancel this class?')) {
-      storageService.deleteSchedule(courseId, sId);
-      refreshData();
-      showToast('Class cancelled', 'success');
+      try {
+        await storageService.deleteSchedule(courseId, sId);
+        await refreshData();
+        showToast('Class cancelled', 'success');
+      } catch (e) {
+        showToast('Failed to delete schedule', 'error');
+      }
     }
   };
 
@@ -153,7 +208,7 @@ export const InstructorView: React.FC<InstructorViewProps> = ({ user, view, show
           <div className="grid gap-4">
             <Select 
               label="Select Course"
-              options={[{ value: '', label: 'Select...' }, ...courses.map(c => ({ value: c.id, label: c.title }))]}
+              options={[{ value: '', label: 'Select...' }, ...(courses || []).map(c => ({ value: c.id, label: c.title }))]}
               value={selectedCourseId}
               onChange={e => setSelectedCourseId(e.target.value)}
               disabled={!!editingSchedId}
@@ -188,7 +243,7 @@ export const InstructorView: React.FC<InstructorViewProps> = ({ user, view, show
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
-              {courses.flatMap(c => c.schedules).map(s => (
+              {(courses || []).flatMap(c => c.schedules || []).map(s => (
                 <tr key={s.id} className="hover:bg-gray-50">
                   <td className="px-6 py-4 text-sm text-gray-900">{s.topic}</td>
                   <td className="px-6 py-4 text-sm text-gray-500">{s.date} {s.time}</td>
@@ -232,7 +287,9 @@ export const InstructorView: React.FC<InstructorViewProps> = ({ user, view, show
               </button>
             </div>
             <Input label="Price ($)" type="number" value={newCoursePrice} onChange={e => setNewCoursePrice(e.target.value)} />
-            <Button onClick={handleCreateCourse} className="w-full">Create Course</Button>
+            <Button onClick={handleCreateCourse} className="w-full" disabled={creatingCourse}>
+              {creatingCourse ? 'Creating...' : 'Create Course'}
+            </Button>
           </div>
         </Card>
 
@@ -242,19 +299,30 @@ export const InstructorView: React.FC<InstructorViewProps> = ({ user, view, show
             <div className="space-y-4">
               <Select 
                 label="Select Course"
-                options={[{ value: '', label: 'Select...' }, ...courses.map(c => ({ value: c.id, label: c.title }))]}
+                options={[{ value: '', label: 'Select...' }, ...(courses || []).map(c => ({ value: c.id, label: c.title }))]}
                 value={selectedCourseId}
                 onChange={e => setSelectedCourseId(e.target.value)}
               />
-              <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-primary-400 transition-colors bg-gray-50">
-                <Upload className="mx-auto h-10 w-10 text-gray-400" />
-                <p className="mt-2 text-sm text-gray-600 font-medium">Click to upload materials</p>
-                <input 
-                  type="file" 
-                  className="mt-4 w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary-50 file:text-primary-700 hover:file:bg-primary-100 cursor-pointer"
-                  onChange={handleFileUpload}
-                  disabled={!selectedCourseId}
-                />
+              <div className={`border-2 border-dashed border-gray-300 rounded-lg p-6 text-center transition-colors bg-gray-50 ${selectedCourseId ? 'hover:border-primary-400 cursor-pointer' : 'opacity-50 cursor-not-allowed'}`}>
+                {uploading ? (
+                    <div className="flex flex-col items-center justify-center py-4">
+                        <Loader2 className="animate-spin text-primary-500 h-8 w-8 mb-2" />
+                        <p className="text-sm text-gray-600">Uploading file...</p>
+                    </div>
+                ) : (
+                    <div className="relative">
+                        <Upload className="mx-auto h-10 w-10 text-gray-400" />
+                        <p className="mt-2 text-sm text-gray-600 font-medium">
+                            {selectedCourseId ? 'Click to upload materials' : 'Select a course to enable upload'}
+                        </p>
+                        <input 
+                          type="file" 
+                          className={`absolute inset-0 w-full h-full opacity-0 z-10 ${selectedCourseId ? 'cursor-pointer' : 'cursor-not-allowed'}`}
+                          onChange={handleFileUpload}
+                          disabled={!selectedCourseId || uploading}
+                        />
+                    </div>
+                )}
               </div>
             </div>
           </Card>
@@ -263,7 +331,7 @@ export const InstructorView: React.FC<InstructorViewProps> = ({ user, view, show
 
       <Card title="My Active Courses & Materials">
          <div className="space-y-4">
-           {courses.map(c => (
+           {(courses || []).map(c => (
              <div key={c.id} className="border border-gray-200 rounded-lg p-4">
                 <div className="flex justify-between items-center mb-2">
                   <h4 className="font-bold text-gray-800">{c.title}</h4>
@@ -271,8 +339,8 @@ export const InstructorView: React.FC<InstructorViewProps> = ({ user, view, show
                 </div>
                 <div className="space-y-1 bg-gray-50 p-3 rounded">
                    <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">Materials</p>
-                   {c.materials.length === 0 && <p className="text-xs text-gray-400 italic">No files</p>}
-                   {c.materials.map(m => (
+                   {(!c.materials || c.materials.length === 0) && <p className="text-xs text-gray-400 italic">No files</p>}
+                   {(c.materials || []).map(m => (
                      <div key={m.id} className="flex justify-between items-center text-sm text-gray-700 bg-white p-2 rounded shadow-sm">
                         <span>{m.title}</span>
                         <button onClick={() => handleDeleteMaterial(c.id, m.id)} className="text-red-500 hover:text-red-700 text-xs">

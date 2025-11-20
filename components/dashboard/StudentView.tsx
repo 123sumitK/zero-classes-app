@@ -18,35 +18,54 @@ export const StudentView: React.FC<StudentViewProps> = ({ user, view, showToast 
   const [loading, setLoading] = useState(true);
   
   useEffect(() => {
-    setLoading(true);
-    // Refresh progress from user object in case it updated
-    setProgressMap(user.progress || {});
-    
-    // Simulate network delay
-    const timer = setTimeout(() => {
-      const all = storageService.getCourses();
-      // Need to re-fetch user to get latest progress if multiple components update it
-      const latestUser = storageService.getUsers().find(u => u.id === user.id);
-      if (latestUser) {
-        setProgressMap(latestUser.progress || {});
-      }
+    let isMounted = true;
+    const fetchData = async () => {
+      setLoading(true);
+      if (isMounted) setProgressMap(user.progress || {});
+      
+      try {
+        const [allCourses, allUsers] = await Promise.all([
+          storageService.getCourses(),
+          storageService.getUsers()
+        ]);
+        
+        if (!isMounted) return;
 
-      setCourses(all.filter(c => user.enrolledCourseIds.includes(c.id)));
-      setAvailableCourses(all.filter(c => !user.enrolledCourseIds.includes(c.id)));
-      setLoading(false);
-    }, 800);
-    return () => clearTimeout(timer);
+        const safeAllCourses = Array.isArray(allCourses) ? allCourses : [];
+        const safeAllUsers = Array.isArray(allUsers) ? allUsers : [];
+
+        const latestUser = safeAllUsers.find(u => u.id === user.id);
+        if (latestUser) {
+          setProgressMap(latestUser.progress || {});
+        }
+
+        // Use optional chaining for safety
+        setCourses(safeAllCourses.filter(c => user.enrolledCourseIds?.includes(c.id)));
+        setAvailableCourses(safeAllCourses.filter(c => !user.enrolledCourseIds?.includes(c.id)));
+      } catch (error) {
+        console.error("Failed to fetch data", error);
+      } finally {
+        if (isMounted) setLoading(false);
+      }
+    };
+
+    fetchData();
+
+    return () => { isMounted = false; };
   }, [user, view]);
 
-  const handleEnroll = (course: Course) => {
-    // Mock Payment
+  const handleEnroll = async (course: Course) => {
     const confirm = window.confirm(`Purchase "${course.title}" for $${course.price}?`);
     if (confirm) {
-      storageService.enrollStudent(user.id, course.id);
-      showToast('Payment successful! You are now enrolled.', 'success');
-      // Refresh local state
-      setCourses(prev => [...prev, course]);
-      setAvailableCourses(prev => prev.filter(c => c.id !== course.id));
+      try {
+        await storageService.enrollStudent(user.id, course.id);
+        showToast('Payment successful! You are now enrolled.', 'success');
+        setCourses(prev => [...prev, course]);
+        setAvailableCourses(prev => prev.filter(c => c.id !== course.id));
+        // Update local user object strictly if needed in parent, but here local state suffices for MVP view
+      } catch (e) {
+        showToast('Enrollment failed', 'error');
+      }
     }
   };
 
@@ -61,13 +80,13 @@ export const StudentView: React.FC<StudentViewProps> = ({ user, view, showToast 
 
   const getProgressPercent = (course: Course) => {
     const completed = progressMap[course.id]?.length || 0;
-    const total = course.materials.length;
+    const total = (course.materials || []).length;
     if (total === 0) return 0;
     return Math.round((completed / total) * 100);
   };
 
   if (view === 'schedule') {
-    const mySchedules = courses.flatMap(c => c.schedules).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    const mySchedules = (courses || []).flatMap(c => c.schedules || []).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
     
     if (loading) {
       return (
@@ -139,7 +158,7 @@ export const StudentView: React.FC<StudentViewProps> = ({ user, view, showToast 
     return (
       <div className="space-y-6">
         <h2 className="text-2xl font-bold text-gray-800">My Enrolled Courses</h2>
-        {courses.length === 0 ? (
+        {(courses || []).length === 0 ? (
             <div className="text-center py-12 bg-white rounded-lg border border-dashed border-gray-300">
                 <BookOpen className="mx-auto h-12 w-12 text-gray-300" />
                 <p className="mt-2 text-gray-500">You haven't enrolled in any courses yet.</p>
@@ -164,8 +183,8 @@ export const StudentView: React.FC<StudentViewProps> = ({ user, view, showToast 
                   
                   <div className="space-y-2 bg-gray-50 p-3 rounded mb-4 border border-gray-100">
                       <h5 className="font-bold text-sm text-gray-700 border-b border-gray-200 pb-1 mb-2">Course Materials</h5>
-                      {course.materials.length === 0 && <p className="text-xs text-gray-500 italic">No files uploaded yet.</p>}
-                      {course.materials.map(m => {
+                      {(!course.materials || course.materials.length === 0) && <p className="text-xs text-gray-500 italic">No files uploaded yet.</p>}
+                      {(course.materials || []).map(m => {
                         const isCompleted = completedIds.includes(m.id);
                         return (
                           <div key={m.id} className="flex items-center justify-between gap-3 text-sm hover:bg-gray-100 p-1.5 rounded transition-colors">
@@ -196,7 +215,7 @@ export const StudentView: React.FC<StudentViewProps> = ({ user, view, showToast 
     );
   }
 
-  // Default Dashboard (Marketplace)
+  // Default Dashboard
   return (
     <div className="space-y-6">
       {loading ? (
@@ -204,7 +223,7 @@ export const StudentView: React.FC<StudentViewProps> = ({ user, view, showToast 
       ) : (
         <div className="bg-gradient-to-r from-primary-100 to-primary-50 border border-primary-200 p-6 rounded-lg">
           <h2 className="text-2xl font-bold text-primary-900">Welcome back, {user.name}!</h2>
-          <p className="text-primary-700 mt-2">You have {courses.length} active courses and {courses.flatMap(c => c.schedules).length} upcoming classes.</p>
+          <p className="text-primary-700 mt-2">You have {courses.length} active courses and {(courses || []).flatMap(c => c.schedules || []).length} upcoming classes.</p>
         </div>
       )}
 
@@ -226,7 +245,7 @@ export const StudentView: React.FC<StudentViewProps> = ({ user, view, showToast 
          </div>
       ) : (
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {availableCourses.map(course => (
+          {(availableCourses || []).map(course => (
             <Card key={course.id} className="flex flex-col h-full transform transition hover:-translate-y-1 hover:shadow-xl">
               <div className="h-32 bg-gray-200 rounded-t-lg -mx-6 -mt-6 mb-4 flex items-center justify-center bg-gradient-to-br from-gray-100 to-gray-200">
                 <BookOpen className="text-gray-400 w-12 h-12" />

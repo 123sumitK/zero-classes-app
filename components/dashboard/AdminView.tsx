@@ -11,7 +11,6 @@ export const AdminView: React.FC<{ showToast: (m: string, t: any) => void }> = (
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'users' | 'courses'>('users');
   
-  // Editing State
   const [editingCourseId, setEditingCourseId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState({ title: '', description: '', price: 0 });
 
@@ -19,24 +18,31 @@ export const AdminView: React.FC<{ showToast: (m: string, t: any) => void }> = (
     loadData();
   }, [activeTab]);
 
-  const loadData = () => {
+  const loadData = async () => {
     setLoading(true);
-    setTimeout(() => {
-      setUsers(storageService.getUsers());
-      setCourses(storageService.getCourses());
+    try {
+      const [fetchedUsers, fetchedCourses] = await Promise.all([
+        storageService.getUsers(),
+        storageService.getCourses()
+      ]);
+      setUsers(Array.isArray(fetchedUsers) ? fetchedUsers : []);
+      setCourses(Array.isArray(fetchedCourses) ? fetchedCourses : []);
+    } catch (e) {
+      showToast('Failed to load data', 'error');
+    } finally {
       setLoading(false);
-    }, 800);
+    }
   };
 
-  const handleRoleChange = (userId: string, newRole: UserRole) => {
-    storageService.updateUserRole(userId, newRole);
+  const handleRoleChange = async (userId: string, newRole: UserRole) => {
+    await storageService.updateUserRole(userId, newRole);
     setUsers(users.map(u => u.id === userId ? { ...u, role: newRole } : u));
     showToast('User role updated', 'success');
   };
 
-  const handleDeleteCourse = (id: string) => {
-    if (window.confirm('Are you sure you want to delete this course? This cannot be undone.')) {
-      storageService.deleteCourse(id);
+  const handleDeleteCourse = async (id: string) => {
+    if (window.confirm('Delete this course?')) {
+      await storageService.deleteCourse(id);
       setCourses(courses.filter(c => c.id !== id));
       showToast('Course deleted', 'success');
     }
@@ -47,9 +53,9 @@ export const AdminView: React.FC<{ showToast: (m: string, t: any) => void }> = (
     setEditForm({ title: c.title, description: c.description, price: c.price });
   };
 
-  const saveCourse = () => {
+  const saveCourse = async () => {
     if (!editingCourseId) return;
-    storageService.updateCourse(editingCourseId, {
+    await storageService.updateCourse(editingCourseId, {
       title: editForm.title,
       description: editForm.description,
       price: editForm.price
@@ -99,7 +105,7 @@ export const AdminView: React.FC<{ showToast: (m: string, t: any) => void }> = (
                     </tr>
                   ))
                 ) : (
-                  users.map(u => (
+                  (users || []).map(u => (
                     <tr key={u.id} className="hover:bg-gray-50">
                       <td className="px-6 py-4 text-sm font-medium text-gray-900">{u.name}</td>
                       <td className="px-6 py-4 text-sm text-gray-500">{u.email}</td>
@@ -143,7 +149,7 @@ export const AdminView: React.FC<{ showToast: (m: string, t: any) => void }> = (
                 {loading ? (
                   [1, 2].map(i => <tr key={i}><td colSpan={4} className="px-6 py-4"><Skeleton className="h-8 w-full" /></td></tr>)
                 ) : (
-                  courses.map(c => (
+                  (courses || []).map(c => (
                     <tr key={c.id} className="hover:bg-gray-50">
                       <td className="px-6 py-4 text-sm font-medium text-gray-900">
                         {editingCourseId === c.id ? (
