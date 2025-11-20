@@ -26,6 +26,20 @@ const ADMIN_SECRET = process.env.ADMIN_SECRET || 'zero-admin-secret-123';
 const connectDB = async () => {
   const uri = process.env.MONGO_URI || 'mongodb://localhost:27017/zero-classes';
   
+  // --- URI DEBUGGING (Safe) ---
+  // This helps you verify if special characters in your password are breaking the URL
+  try {
+    if (uri.startsWith('mongodb+srv://')) {
+        const parts = uri.split('@');
+        if (parts.length > 1) {
+            const creds = parts[0].split('//')[1];
+            const [user, pass] = creds.split(':');
+            console.log(`[DB Debug] Connecting as User: "${user}"`);
+            console.log(`[DB Debug] Target Host: "${parts[1].split('/')[0]}"`);
+        }
+    }
+  } catch (e) { console.log('[DB Debug] Could not parse URI for debugging'); }
+
   if (!process.env.MONGO_URI) {
     console.warn("⚠️ WARNING: MONGO_URI not found in env. Using localhost fallback.");
   }
@@ -37,6 +51,7 @@ const connectDB = async () => {
     seedAdmin();
   } catch (err) {
     console.error('❌ MongoDB Critical Connection Error:', err.message);
+    console.log('💡 TIP: If authentication fails, ensure your Password in MONGO_URI is URL Encoded (e.g., @ -> %40)');
     console.log('💡 TIP: If on Render, ensure MongoDB Atlas Network Access allows 0.0.0.0/0');
   }
 };
