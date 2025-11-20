@@ -1,0 +1,5 @@
+{
+  "name": "Zero Classes",
+  "description": "A comprehensive e-learning MVP featuring role-based access (Student, Instructor, Admin), course management, scheduling, mock payments, and AI-powered course assistance using Gemini.",
+  "requestFramePermissions": []
+}
