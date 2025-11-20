@@ -24,7 +24,6 @@ export const ResourceView: React.FC<{ user: User }> = ({ user }) => {
         } else if (user.role === UserRole.INSTRUCTOR) {
           setCourses(safeAll.filter(c => c.instructorId === user.id));
         } else {
-          // Add Optional Chaining ?. here to prevent crash
           setCourses(safeAll.filter(c => user.enrolledCourseIds?.includes(c.id)));
         }
       } catch (error) {
@@ -35,9 +34,16 @@ export const ResourceView: React.FC<{ user: User }> = ({ user }) => {
     };
 
     fetchResources();
-
     return () => { isMounted = false; };
   }, [user]);
+
+  const handleDownload = (url: string) => {
+    if (!url || url === '#') {
+        alert("File URL not available");
+        return;
+    }
+    window.open(url, '_blank');
+  };
 
   if (loading) return <div className="p-4"><Skeleton className="h-96 w-full" /></div>;
 
@@ -69,7 +75,7 @@ export const ResourceView: React.FC<{ user: User }> = ({ user }) => {
                           <p className="text-xs text-gray-500">{new Date(m.uploadedAt).toLocaleDateString()} • {m.type}</p>
                         </div>
                       </div>
-                      <Button variant="outline" className="text-xs py-1 px-3 h-8" onClick={() => alert(`Downloading ${m.title}... (Mock)`)}>
+                      <Button variant="outline" className="text-xs py-1 px-3 h-8" onClick={() => handleDownload(m.url)}>
                         <Download size={14} className="mr-1 inline" /> Download
                       </Button>
                     </div>

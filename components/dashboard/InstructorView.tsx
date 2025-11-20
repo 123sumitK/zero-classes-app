@@ -4,13 +4,17 @@ import { User, UserRole, Course, ClassSchedule, CourseMaterial } from '../../typ
 import { storageService } from '../../services/storage';
 import { generateCourseOutline } from '../../services/geminiService';
 import { Button, Input, Select, Card, Skeleton } from '../ui/Shared';
-import { Sparkles, Upload, Video, Trash2, Edit2, Save, X, Loader2 } from 'lucide-react';
+import { Sparkles, Upload, Video, Trash2, Edit2, Loader2 } from 'lucide-react';
 
 interface InstructorViewProps {
   user: User;
   view: string;
   showToast: (m: string, t: any) => void;
 }
+
+// Cloudinary Configuration from User Screenshot
+const CLOUD_NAME = 'dj0tdcc8f'; 
+const UPLOAD_PRESET = 'zero_classes_preset'; 
 
 export const InstructorView: React.FC<InstructorViewProps> = ({ user, view, showToast }) => {
   const [courses, setCourses] = useState<Course[]>([]);
@@ -41,7 +45,6 @@ export const InstructorView: React.FC<InstructorViewProps> = ({ user, view, show
     setLoading(true);
     try {
       const all = await storageService.getCourses();
-      // Ensure we always have an array
       const safeAll = Array.isArray(all) ? all : [];
       
       if (user.role === UserRole.ADMIN) {
@@ -70,7 +73,7 @@ export const InstructorView: React.FC<InstructorViewProps> = ({ user, view, show
     setCreatingCourse(true);
     
     const newCourseData: Course = {
-      id: '', // ID will be assigned by server
+      id: '', 
       title: newCourseTitle,
       description: newCourseDesc,
       instructorId: user.id,
@@ -84,8 +87,6 @@ export const InstructorView: React.FC<InstructorViewProps> = ({ user, view, show
       setCourses(prev => [...prev, createdCourse]);
       showToast('Course created successfully', 'success');
       setNewCourseTitle(''); setNewCourseDesc(''); setNewCoursePrice('');
-      
-      // Auto-select for material upload
       setSelectedCourseId(createdCourse.id);
     } catch (error) {
       showToast('Failed to create course', 'error');
@@ -107,6 +108,10 @@ export const InstructorView: React.FC<InstructorViewProps> = ({ user, view, show
     setUploading(true);
     
     try {
+        // 1. Upload to Cloudinary
+        const secureUrl = await storageService.uploadToCloudinary(file, CLOUD_NAME, UPLOAD_PRESET);
+        
+        // 2. Prepare Metadata
         const ext = file.name.split('.').pop()?.toLowerCase();
         let type: 'PDF' | 'DOCX' | 'PPT' | 'OTHER' = 'OTHER';
         if (ext === 'pdf') type = 'PDF';
@@ -117,16 +122,22 @@ export const InstructorView: React.FC<InstructorViewProps> = ({ user, view, show
             id: Math.random().toString(36).substring(7),
             title: file.name,
             type: type,
-            url: '#', // Mock URL
+            url: secureUrl, // Save the real Cloudinary URL
             uploadedAt: new Date().toISOString()
         };
 
+        // 3. Save to Database
         await storageService.addMaterial(selectedCourseId, newMaterial);
         showToast(`Successfully uploaded: ${file.name}`, 'success');
         await refreshData(); 
-    } catch (e) {
+    } catch (e: any) {
         console.error(e);
-        showToast('Failed to upload material', 'error');
+        if (e.message && e.message.includes('unsigned uploads')) {
+            showToast('Cloudinary Config Error', 'error');
+            alert('⚠️ CLOUDINARY CONFIGURATION REQUIRED ⚠️\n\nYour Upload Preset "zero_classes_preset" is set to "Signed".\n\nTO FIX:\n1. Go to Cloudinary Dashboard -> Settings -> Upload -> Upload Presets\n2. Edit "zero_classes_preset"\n3. Change Signing Mode to "Unsigned"\n4. Save');
+        } else {
+            showToast(`Upload failed: ${e.message}`, 'error');
+        }
     } finally {
         setUploading(false);
         e.target.value = '';
@@ -147,28 +158,21 @@ export const InstructorView: React.FC<InstructorViewProps> = ({ user, view, show
 
   const handleAddSchedule = async () => {
     if (!selectedCourseId || !schedDate || !schedTime) return;
-    
     try {
-      if (editingSchedId) {
-        await storageService.updateSchedule(selectedCourseId, {
-          id: editingSchedId,
-          courseId: selectedCourseId,
-          topic: schedTopic,
-          date: schedDate,
-          time: schedTime,
-          meetingUrl: 'https://meet.google.com/mock-updated'
-        });
-        showToast('Schedule updated', 'success');
-        setEditingSchedId(null);
-      } else {
-        await storageService.addSchedule(selectedCourseId, {
-          id: Math.random().toString(36).substring(7),
+      const payload = {
           courseId: selectedCourseId,
           topic: schedTopic || 'Class Session',
           date: schedDate,
           time: schedTime,
-          meetingUrl: 'https://meet.google.com/mock-link-xyz'
-        });
+          meetingUrl: 'https://meet.google.com/new'
+      };
+
+      if (editingSchedId) {
+        await storageService.updateSchedule(selectedCourseId, { ...payload, id: editingSchedId });
+        showToast('Schedule updated', 'success');
+        setEditingSchedId(null);
+      } else {
+        await storageService.addSchedule(selectedCourseId, { ...payload, id: Math.random().toString(36).substring(7) });
         showToast('Class scheduled!', 'success');
       }
       setSchedDate(''); setSchedTime(''); setSchedTopic('');
@@ -177,90 +181,6 @@ export const InstructorView: React.FC<InstructorViewProps> = ({ user, view, show
       showToast('Failed to save schedule', 'error');
     }
   };
-
-  const startEditSchedule = (s: ClassSchedule) => {
-    setSelectedCourseId(s.courseId);
-    setSchedTopic(s.topic);
-    setSchedDate(s.date);
-    setSchedTime(s.time);
-    setEditingSchedId(s.id);
-    showToast('Editing schedule above...', 'info');
-  };
-
-  const handleDeleteSchedule = async (courseId: string, sId: string) => {
-    if (window.confirm('Cancel this class?')) {
-      try {
-        await storageService.deleteSchedule(courseId, sId);
-        await refreshData();
-        showToast('Class cancelled', 'success');
-      } catch (e) {
-        showToast('Failed to delete schedule', 'error');
-      }
-    }
-  };
-
-  if (view === 'schedule') {
-    if (loading) return <div className="p-4"><Skeleton className="h-64 w-full" /></div>;
-
-    return (
-      <div className="space-y-6">
-        <Card title={editingSchedId ? "Edit Class Schedule" : "Schedule Live Class"}>
-          <div className="grid gap-4">
-            <Select 
-              label="Select Course"
-              options={[{ value: '', label: 'Select...' }, ...(courses || []).map(c => ({ value: c.id, label: c.title }))]}
-              value={selectedCourseId}
-              onChange={e => setSelectedCourseId(e.target.value)}
-              disabled={!!editingSchedId}
-            />
-            <Input label="Topic" value={schedTopic} onChange={e => setSchedTopic(e.target.value)} placeholder="e.g. Weekly Q&A" />
-            <div className="grid grid-cols-2 gap-4">
-              <Input type="date" label="Date" value={schedDate} onChange={e => setSchedDate(e.target.value)} />
-              <Input type="time" label="Time" value={schedTime} onChange={e => setSchedTime(e.target.value)} />
-            </div>
-            <div className="flex gap-2">
-              <Button onClick={handleAddSchedule} disabled={!selectedCourseId} className="flex-1">
-                <Video className="inline w-4 h-4 mr-2" />
-                {editingSchedId ? 'Update Schedule' : 'Schedule & Generate Link'}
-              </Button>
-              {editingSchedId && (
-                <Button variant="secondary" onClick={() => { setEditingSchedId(null); setSchedTopic(''); setSchedDate(''); setSchedTime(''); }}>
-                  Cancel Edit
-                </Button>
-              )}
-            </div>
-          </div>
-        </Card>
-
-        <h3 className="text-lg font-bold mt-8">Upcoming Classes</h3>
-        <div className="bg-white rounded-lg shadow overflow-hidden border border-gray-200">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Topic</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-200">
-              {(courses || []).flatMap(c => c.schedules || []).map(s => (
-                <tr key={s.id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 text-sm text-gray-900">{s.topic}</td>
-                  <td className="px-6 py-4 text-sm text-gray-500">{s.date} {s.time}</td>
-                  <td className="px-6 py-4 text-sm text-gray-500">
-                     <div className="flex gap-3">
-                        <button onClick={() => startEditSchedule(s)} className="text-blue-600 hover:text-blue-800"><Edit2 size={16}/></button>
-                        <button onClick={() => handleDeleteSchedule(s.courseId, s.id)} className="text-red-600 hover:text-red-800"><Trash2 size={16}/></button>
-                     </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    );
-  }
 
   if (loading) return <div className="p-4"><Skeleton className="h-96 w-full" /></div>;
 
@@ -307,7 +227,7 @@ export const InstructorView: React.FC<InstructorViewProps> = ({ user, view, show
                 {uploading ? (
                     <div className="flex flex-col items-center justify-center py-4">
                         <Loader2 className="animate-spin text-primary-500 h-8 w-8 mb-2" />
-                        <p className="text-sm text-gray-600">Uploading file...</p>
+                        <p className="text-sm text-gray-600">Uploading to Cloud...</p>
                     </div>
                 ) : (
                     <div className="relative">
@@ -342,7 +262,7 @@ export const InstructorView: React.FC<InstructorViewProps> = ({ user, view, show
                    {(!c.materials || c.materials.length === 0) && <p className="text-xs text-gray-400 italic">No files</p>}
                    {(c.materials || []).map(m => (
                      <div key={m.id} className="flex justify-between items-center text-sm text-gray-700 bg-white p-2 rounded shadow-sm">
-                        <span>{m.title}</span>
+                        <a href={m.url} target="_blank" rel="noreferrer" className="hover:underline text-blue-600 truncate max-w-[200px]">{m.title}</a>
                         <button onClick={() => handleDeleteMaterial(c.id, m.id)} className="text-red-500 hover:text-red-700 text-xs">
                            <Trash2 size={14} />
                         </button>

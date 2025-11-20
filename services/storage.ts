@@ -1,9 +1,6 @@
 
-/// <reference types="vite/client" />
-
 import { User, Course, UserRole, ClassSchedule, CourseMaterial } from '../types';
 
-// API CONFIGURATION
 const getApiUrl = () => {
   try {
     // @ts-ignore
@@ -17,22 +14,19 @@ const getApiUrl = () => {
       return process.env.VITE_API_URL;
     }
   } catch (e) {}
-  // Use explicit 127.0.0.1 to avoid node localhost resolution issues
   return 'http://127.0.0.1:3000/api';
 };
 
 const API_URL = getApiUrl();
 
-// Helper: Format User from DB to Frontend
 const formatUser = (u: any): User => ({
   ...u,
   id: u._id || u.id,
-  // Ensure enrolledCourses (DB) is mapped to enrolledCourseIds (Frontend) and is always an array
   enrolledCourseIds: Array.isArray(u.enrolledCourses) ? u.enrolledCourses.map((id: any) => String(id)) : [],
-  progress: u.progress || {}
+  progress: u.progress || {},
+  countryCode: u.countryCode || '+91'
 });
 
-// Helper: Format Course from DB to Frontend
 const formatCourse = (c: any): Course => ({ 
   ...c, 
   id: c._id || c.id,
@@ -42,7 +36,6 @@ const formatCourse = (c: any): Course => ({
 
 export const storageService = {
   // --- AUTH & OTP ---
-
   sendOTP: async (target: string, type: 'email' | 'mobile'): Promise<boolean> => {
     try {
       const res = await fetch(`${API_URL}/auth/send-otp`, {
@@ -94,7 +87,13 @@ export const storageService = {
     return formatUser(data);
   },
 
-  // --- DATA ACCESS (Defensive) ---
+  // --- DATA ---
+  getUser: async (userId: string): Promise<User> => {
+    const res = await fetch(`${API_URL}/users/${userId}`);
+    const data = await res.json();
+    if (!res.ok) throw new Error('Failed to fetch user');
+    return formatUser(data);
+  },
 
   getUsers: async (): Promise<User[]> => {
     try {
@@ -102,10 +101,7 @@ export const storageService = {
       const data = await res.json();
       if (!Array.isArray(data)) return [];
       return data.map(formatUser);
-    } catch (e) { 
-      console.error("Get Users Failed", e);
-      return []; 
-    }
+    } catch (e) { return []; }
   },
 
   getCourses: async (): Promise<Course[]> => {
@@ -114,22 +110,36 @@ export const storageService = {
       const data = await res.json();
       if (!Array.isArray(data)) return [];
       return data.map(formatCourse);
-    } catch (e) { 
-      console.error("Get Courses Failed", e);
-      return []; 
+    } catch (e) { return []; }
+  },
+
+  // --- CLOUDINARY UPLOAD ---
+  uploadToCloudinary: async (file: File, cloudName: string, preset: string): Promise<string> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('upload_preset', preset);
+    
+    // Determine resource type manually to prevent PDF 401 errors
+    // Images => 'image'
+    // PDFs, Docs, Zips => 'raw'
+    const isImage = file.type.startsWith('image/');
+    const resourceType = isImage ? 'image' : 'raw';
+
+    const res = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/${resourceType}/upload`, {
+      method: 'POST',
+      body: formData
+    });
+    
+    const data = await res.json();
+    if (!res.ok) {
+        console.error("Cloudinary Error Details:", data);
+        throw new Error(data.error?.message || 'Cloudinary upload failed');
     }
+    console.log("Uploaded File URL:", data.secure_url);
+    return data.secure_url;
   },
 
   // --- MODIFIERS ---
-
-  updateUserRole: async (userId: string, newRole: UserRole) => {
-    await fetch(`${API_URL}/users/${userId}/role`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ role: newRole })
-    });
-  },
-
   addCourse: async (course: Course): Promise<Course> => {
     const { id, ...courseData } = course;
     const res = await fetch(`${API_URL}/courses`, {
@@ -143,84 +153,89 @@ export const storageService = {
   },
 
   updateCourse: async (courseId: string, updates: Partial<Course>) => {
-    const res = await fetch(`${API_URL}/courses/${courseId}`, {
+    await fetch(`${API_URL}/courses/${courseId}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(updates)
     });
-    if (!res.ok) throw new Error('Failed to update course');
   },
 
   deleteCourse: async (courseId: string) => {
     await fetch(`${API_URL}/courses/${courseId}`, { method: 'DELETE' });
   },
 
-  // --- ATOMIC SUB-DOCUMENT HANDLERS ---
-  
+  updateUserRole: async (userId: string, newRole: UserRole) => {
+    await fetch(`${API_URL}/users/${userId}/role`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ role: newRole })
+    });
+  },
+
+  // --- MATERIALS & SCHEDULES ---
   addMaterial: async (courseId: string, material: CourseMaterial) => {
-    // Ensure uploadedAt is a string
     const payload = {
       ...material,
       uploadedAt: typeof material.uploadedAt === 'string' ? material.uploadedAt : new Date().toISOString()
     };
-    
-    const res = await fetch(`${API_URL}/courses/${courseId}/materials`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
-    
-    const data = await res.json();
-    
-    if (!res.ok) {
-      console.error("Server Upload Error:", data);
-      throw new Error(data.error || `Server error ${res.status}: Failed to upload material`);
+    try {
+        const res = await fetch(`${API_URL}/courses/${courseId}/materials`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        if (res.status === 404) throw new Error("Backend route not found (404). Did you restart the server?");
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || `Upload failed: ${res.statusText}`);
+    } catch (e: any) {
+        console.error(e);
+        throw e;
     }
   },
 
   deleteMaterial: async (courseId: string, materialId: string) => {
-    const res = await fetch(`${API_URL}/courses/${courseId}/materials/${materialId}`, {
-      method: 'DELETE'
-    });
-    if (!res.ok) throw new Error("Failed to delete material");
+    await fetch(`${API_URL}/courses/${courseId}/materials/${materialId}`, { method: 'DELETE' });
   },
 
   addSchedule: async (courseId: string, schedule: ClassSchedule) => {
-    const res = await fetch(`${API_URL}/courses/${courseId}/schedules`, {
+    await fetch(`${API_URL}/courses/${courseId}/schedules`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(schedule)
     });
-    if (!res.ok) throw new Error("Failed to add schedule");
   },
 
   updateSchedule: async (courseId: string, schedule: ClassSchedule) => {
-    const res = await fetch(`${API_URL}/courses/${courseId}/schedules/${schedule.id}`, {
+    await fetch(`${API_URL}/courses/${courseId}/schedules/${schedule.id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(schedule)
     });
-    if (!res.ok) throw new Error("Failed to update schedule");
   },
 
   deleteSchedule: async (courseId: string, scheduleId: string) => {
-    const res = await fetch(`${API_URL}/courses/${courseId}/schedules/${scheduleId}`, {
-      method: 'DELETE'
-    });
-    if (!res.ok) throw new Error("Failed to delete schedule");
+    await fetch(`${API_URL}/courses/${courseId}/schedules/${scheduleId}`, { method: 'DELETE' });
   },
 
-  enrollStudent: async (userId: string, courseId: string) => {
+  enrollStudent: async (userId: string, courseId: string): Promise<User> => {
     const res = await fetch(`${API_URL}/enroll`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ userId, courseId })
     });
     if (!res.ok) throw new Error("Enrollment failed");
+    // Return the updated user object from the server
+    const updatedUser = await res.json();
+    return formatUser(updatedUser);
   },
   
-  toggleProgress: (userId: string, courseId: string, materialId: string): any => {
-     // Placeholder for future progress tracking API
-     return {};
+  toggleProgress: async (userId: string, courseId: string, materialId: string): Promise<Record<string, string[]>> => {
+    const res = await fetch(`${API_URL}/users/${userId}/progress`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ courseId, materialId })
+    });
+    if (!res.ok) throw new Error("Progress update failed");
+    return await res.json();
   }
 };

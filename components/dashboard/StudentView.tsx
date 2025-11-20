@@ -3,15 +3,16 @@ import React, { useState, useEffect } from 'react';
 import { User, Course } from '../../types';
 import { storageService } from '../../services/storage';
 import { Button, Card, Skeleton, ProgressBar, Checkbox } from '../ui/Shared';
-import { BookOpen, CheckCircle2, Circle } from 'lucide-react';
+import { BookOpen, Download } from 'lucide-react';
 
 interface StudentViewProps {
   user: User;
   view: string;
   showToast: (m: string, t: any) => void;
+  refreshUser: () => Promise<void>;
 }
 
-export const StudentView: React.FC<StudentViewProps> = ({ user, view, showToast }) => {
+export const StudentView: React.FC<StudentViewProps> = ({ user, view, showToast, refreshUser }) => {
   const [courses, setCourses] = useState<Course[]>([]);
   const [availableCourses, setAvailableCourses] = useState<Course[]>([]);
   const [progressMap, setProgressMap] = useState<Record<string, string[]>>(user.progress || {});
@@ -21,27 +22,17 @@ export const StudentView: React.FC<StudentViewProps> = ({ user, view, showToast 
     let isMounted = true;
     const fetchData = async () => {
       setLoading(true);
-      if (isMounted) setProgressMap(user.progress || {});
-      
       try {
-        const [allCourses, allUsers] = await Promise.all([
-          storageService.getCourses(),
-          storageService.getUsers()
-        ]);
-        
-        if (!isMounted) return;
+        const freshUser = await storageService.getUser(user.id);
+        if (isMounted) setProgressMap(freshUser.progress || {});
 
+        const allCourses = await storageService.getCourses();
         const safeAllCourses = Array.isArray(allCourses) ? allCourses : [];
-        const safeAllUsers = Array.isArray(allUsers) ? allUsers : [];
 
-        const latestUser = safeAllUsers.find(u => u.id === user.id);
-        if (latestUser) {
-          setProgressMap(latestUser.progress || {});
+        if (isMounted) {
+           setCourses(safeAllCourses.filter(c => freshUser.enrolledCourseIds?.includes(c.id)));
+           setAvailableCourses(safeAllCourses.filter(c => !freshUser.enrolledCourseIds?.includes(c.id)));
         }
-
-        // Use optional chaining for safety
-        setCourses(safeAllCourses.filter(c => user.enrolledCourseIds?.includes(c.id)));
-        setAvailableCourses(safeAllCourses.filter(c => !user.enrolledCourseIds?.includes(c.id)));
       } catch (error) {
         console.error("Failed to fetch data", error);
       } finally {
@@ -50,28 +41,27 @@ export const StudentView: React.FC<StudentViewProps> = ({ user, view, showToast 
     };
 
     fetchData();
-
     return () => { isMounted = false; };
-  }, [user, view]);
+  }, [user.id, view]);
 
   const handleEnroll = async (course: Course) => {
     const confirm = window.confirm(`Purchase "${course.title}" for $${course.price}?`);
     if (confirm) {
       try {
         await storageService.enrollStudent(user.id, course.id);
+        await refreshUser();
         showToast('Payment successful! You are now enrolled.', 'success');
         setCourses(prev => [...prev, course]);
         setAvailableCourses(prev => prev.filter(c => c.id !== course.id));
-        // Update local user object strictly if needed in parent, but here local state suffices for MVP view
       } catch (e) {
         showToast('Enrollment failed', 'error');
       }
     }
   };
 
-  const toggleMaterial = (courseId: string, materialId: string) => {
+  const toggleMaterial = async (courseId: string, materialId: string) => {
     try {
-      const newProgress = storageService.toggleProgress(user.id, courseId, materialId);
+      const newProgress = await storageService.toggleProgress(user.id, courseId, materialId);
       setProgressMap(newProgress);
     } catch (error) {
       showToast('Failed to update progress', 'error');
@@ -85,30 +75,17 @@ export const StudentView: React.FC<StudentViewProps> = ({ user, view, showToast 
     return Math.round((completed / total) * 100);
   };
 
+  const handleContinueLearning = (courseId: string) => {
+    const element = document.getElementById(`course-${courseId}`);
+    if (element) element.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  const handleDownload = (url: string) => {
+    window.open(url, '_blank');
+  };
+
   if (view === 'schedule') {
     const mySchedules = (courses || []).flatMap(c => c.schedules || []).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-    
-    if (loading) {
-      return (
-        <div className="space-y-6">
-          <Skeleton className="h-8 w-48" />
-          <div className="grid gap-4">
-            {[1, 2, 3].map(i => (
-              <Card key={i} className="border-l-4 border-gray-200">
-                <div className="flex justify-between items-center">
-                  <div className="space-y-2">
-                    <Skeleton className="h-6 w-48" />
-                    <Skeleton className="h-4 w-32" />
-                  </div>
-                  <Skeleton className="h-10 w-32" />
-                </div>
-              </Card>
-            ))}
-          </div>
-        </div>
-      );
-    }
-
     return (
       <div className="space-y-6">
         <h2 className="text-2xl font-bold text-gray-800">Your Class Schedule</h2>
@@ -136,24 +113,7 @@ export const StudentView: React.FC<StudentViewProps> = ({ user, view, showToast 
   }
 
   if (view === 'courses') {
-    if (loading) {
-      return (
-        <div className="space-y-6">
-          <Skeleton className="h-8 w-64" />
-          <div className="grid md:grid-cols-2 gap-6">
-             {[1, 2].map(i => (
-               <Card key={i} className="h-64 flex flex-col">
-                 <Skeleton className="h-6 w-3/4 mb-4" />
-                 <Skeleton className="h-4 w-full mb-2" />
-                 <Skeleton className="h-4 w-2/3 mb-4" />
-                 <Skeleton className="h-24 w-full rounded mb-4" />
-                 <Skeleton className="h-10 w-full mt-auto" />
-               </Card>
-             ))}
-          </div>
-        </div>
-      );
-    }
+    if (loading) return <Skeleton className="h-96 w-full" />;
 
     return (
       <div className="space-y-6">
@@ -162,6 +122,7 @@ export const StudentView: React.FC<StudentViewProps> = ({ user, view, showToast 
             <div className="text-center py-12 bg-white rounded-lg border border-dashed border-gray-300">
                 <BookOpen className="mx-auto h-12 w-12 text-gray-300" />
                 <p className="mt-2 text-gray-500">You haven't enrolled in any courses yet.</p>
+                <Button onClick={() => {}} className="mt-4" variant="outline">Browse Catalog</Button>
             </div>
         ) : (
             <div className="grid md:grid-cols-2 gap-6">
@@ -170,7 +131,7 @@ export const StudentView: React.FC<StudentViewProps> = ({ user, view, showToast 
               const completedIds = progressMap[course.id] || [];
 
               return (
-                <Card key={course.id} title={course.title} className="flex flex-col h-full">
+                <Card key={course.id} title={course.title} className="flex flex-col h-full" id={`course-${course.id}`}>
                   <div className="mb-4">
                      <div className="flex justify-between text-xs text-gray-600 mb-1">
                        <span>Progress</span>
@@ -179,33 +140,42 @@ export const StudentView: React.FC<StudentViewProps> = ({ user, view, showToast 
                      <ProgressBar value={percent} />
                   </div>
                   
-                  <p className="text-gray-600 mb-4 flex-1">{course.description}</p>
+                  <p className="text-gray-600 mb-4 flex-1 line-clamp-3">{course.description}</p>
                   
-                  <div className="space-y-2 bg-gray-50 p-3 rounded mb-4 border border-gray-100">
+                  <div className="space-y-2 bg-gray-50 p-3 rounded mb-4 border border-gray-100 max-h-60 overflow-y-auto">
                       <h5 className="font-bold text-sm text-gray-700 border-b border-gray-200 pb-1 mb-2">Course Materials</h5>
                       {(!course.materials || course.materials.length === 0) && <p className="text-xs text-gray-500 italic">No files uploaded yet.</p>}
                       {(course.materials || []).map(m => {
                         const isCompleted = completedIds.includes(m.id);
                         return (
-                          <div key={m.id} className="flex items-center justify-between gap-3 text-sm hover:bg-gray-100 p-1.5 rounded transition-colors">
-                              <div className="flex items-center gap-2 min-w-0">
+                          <div key={m.id} className="flex items-center justify-between gap-2 text-sm hover:bg-gray-100 p-2 rounded transition-colors">
+                              <div className="flex items-center gap-2 min-w-0 flex-1">
                                 <Checkbox 
                                   checked={isCompleted} 
                                   onChange={() => toggleMaterial(course.id, m.id)}
                                   className="mt-0.5"
                                 />
-                                <span className={`truncate ${isCompleted ? 'text-gray-400 line-through' : 'text-gray-700'}`}>
+                                <span 
+                                  className={`truncate cursor-pointer hover:text-primary-600 ${isCompleted ? 'text-gray-400 line-through' : 'text-gray-700'}`}
+                                  onClick={() => handleDownload(m.url)}
+                                >
                                   {m.title}
                                 </span>
                               </div>
-                              <span className="text-[10px] bg-blue-100 text-blue-700 px-2 py-0.5 rounded font-medium flex-shrink-0">
-                                {m.type}
-                              </span>
+                              <button 
+                                onClick={() => handleDownload(m.url)}
+                                className="text-gray-400 hover:text-primary-600"
+                                title="Download"
+                              >
+                                <Download size={16} />
+                              </button>
                           </div>
                         );
                       })}
                   </div>
-                  <Button variant="outline" className="w-full mt-auto">Continue Learning</Button>
+                  <Button variant="outline" className="w-full mt-auto" onClick={() => handleContinueLearning(course.id)}>
+                    Continue Learning
+                  </Button>
                 </Card>
               );
             })}
@@ -215,7 +185,6 @@ export const StudentView: React.FC<StudentViewProps> = ({ user, view, showToast 
     );
   }
 
-  // Default Dashboard
   return (
     <div className="space-y-6">
       {loading ? (
@@ -223,27 +192,23 @@ export const StudentView: React.FC<StudentViewProps> = ({ user, view, showToast 
       ) : (
         <div className="bg-gradient-to-r from-primary-100 to-primary-50 border border-primary-200 p-6 rounded-lg">
           <h2 className="text-2xl font-bold text-primary-900">Welcome back, {user.name}!</h2>
-          <p className="text-primary-700 mt-2">You have {courses.length} active courses and {(courses || []).flatMap(c => c.schedules || []).length} upcoming classes.</p>
+          <div className="flex flex-wrap gap-4 mt-4">
+             <div className="bg-white px-4 py-2 rounded shadow-sm">
+                <span className="block text-xs text-gray-500">Enrolled Courses</span>
+                <span className="text-xl font-bold text-primary-600">{courses.length}</span>
+             </div>
+             <div className="bg-white px-4 py-2 rounded shadow-sm">
+                <span className="block text-xs text-gray-500">Completed Lessons</span>
+                <span className="text-xl font-bold text-green-600">
+                   {Object.values(progressMap).reduce((acc: number, list: string[]) => acc + (list?.length || 0), 0)}
+                </span>
+             </div>
+          </div>
         </div>
       )}
 
-      <h3 className="text-xl font-bold text-gray-800 mt-8">Available Courses</h3>
-      {loading ? (
-         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {[1, 2, 3].map(i => (
-              <Card key={i} className="h-96">
-                <Skeleton className="h-32 w-full rounded-t-lg mb-4 -mx-6 -mt-6 w-[calc(100%+3rem)]" />
-                <Skeleton className="h-6 w-3/4 mb-2" />
-                <Skeleton className="h-4 w-full mb-2" />
-                <Skeleton className="h-4 w-2/3" />
-                <div className="mt-12 flex justify-between items-center">
-                  <Skeleton className="h-8 w-16" />
-                  <Skeleton className="h-10 w-24" />
-                </div>
-              </Card>
-            ))}
-         </div>
-      ) : (
+      <h3 className="text-xl font-bold text-gray-800 mt-8">Browse Catalog</h3>
+      {loading ? <Skeleton className="h-64 w-full" /> : (
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
           {(availableCourses || []).map(course => (
             <Card key={course.id} className="flex flex-col h-full transform transition hover:-translate-y-1 hover:shadow-xl">
@@ -258,6 +223,7 @@ export const StudentView: React.FC<StudentViewProps> = ({ user, view, showToast 
               </div>
             </Card>
           ))}
+          {availableCourses.length === 0 && <p className="text-gray-500">You have enrolled in all available courses!</p>}
         </div>
       )}
     </div>

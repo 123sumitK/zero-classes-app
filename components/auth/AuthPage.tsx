@@ -2,13 +2,20 @@
 import React, { useState } from 'react';
 import { User, UserRole } from '../../types';
 import { storageService } from '../../services/storage';
-import { Button, Input, Select, Card } from '../ui/Shared';
-import { ShieldCheck, Lock, Smartphone, Mail, User as UserIcon, Key } from 'lucide-react';
+import { Button, Input, Select } from '../ui/Shared';
+import { ShieldCheck, Lock, Smartphone, Mail, User as UserIcon, Key, Globe } from 'lucide-react';
 
 interface AuthPageProps {
   onLogin: (u: User) => void;
   showToast: (msg: string, type: any) => void;
 }
+
+const COUNTRY_CODES = [
+  { code: '+91', label: 'IN (+91)', len: 10 },
+  { code: '+1',  label: 'US (+1)',  len: 10 },
+  { code: '+44', label: 'UK (+44)', len: 10 },
+  { code: '+61', label: 'AU (+61)', len: 9 },
+];
 
 export const AuthPage: React.FC<AuthPageProps> = ({ onLogin, showToast }) => {
   const [isLogin, setIsLogin] = useState(true);
@@ -17,9 +24,13 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLogin, showToast }) => {
   const [email, setEmail] = useState('');
   const [name, setName] = useState('');
   const [password, setPassword] = useState('');
+  const [countryCode, setCountryCode] = useState('+91');
   const [mobile, setMobile] = useState('');
   const [role, setRole] = useState<UserRole>(UserRole.STUDENT);
-  const [adminSecret, setAdminSecret] = useState(''); // For Restricted Admin Registration
+  const [adminSecret, setAdminSecret] = useState(''); 
+
+  // Errors
+  const [errors, setErrors] = useState<Record<string, string>>({});
 
   // OTP State
   const [showOtpInput, setShowOtpInput] = useState(false);
@@ -28,20 +39,29 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLogin, showToast }) => {
   const [isSendingOtp, setIsSendingOtp] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  // Regex Validators
-  const isValidEmail = (e: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
-  const isValidMobile = (m: string) => /^\d{10}$/.test(m);
+  // Validation Helpers
+  const validateEmail = (e: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
+  const validatePassword = (p: string) => {
+    // Min 6 chars, 1 letter, 1 number
+    return p.length >= 6 && /[a-zA-Z]/.test(p) && /\d/.test(p);
+  };
+  
+  const getPhoneLength = () => COUNTRY_CODES.find(c => c.code === countryCode)?.len || 10;
 
   const handleSendOTP = async () => {
-    if (!isValidMobile(mobile)) {
-      showToast('Enter valid 10-digit mobile number', 'error');
+    const reqLen = getPhoneLength();
+    if (!mobile || mobile.length !== reqLen) {
+      setErrors(prev => ({ ...prev, mobile: `Mobile number must be ${reqLen} digits for ${countryCode}` }));
       return;
+    } else {
+      setErrors(prev => ({ ...prev, mobile: '' }));
     }
+
     setIsSendingOtp(true);
     try {
       await storageService.sendOTP(mobile, 'mobile'); 
       setShowOtpInput(true);
-      showToast('OTP sent! (Check Server Console)', 'success');
+      showToast('OTP sent! (Check Render Server Logs)', 'success');
     } catch (e: any) {
       showToast(e.message || 'Failed to send OTP', 'error');
     } finally {
@@ -56,6 +76,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLogin, showToast }) => {
       if (isValid) {
         setIsMobileVerified(true);
         setShowOtpInput(false);
+        setErrors(prev => ({ ...prev, mobile: '' }));
         showToast('Mobile verified successfully', 'success');
       } else {
         showToast('Invalid OTP Code', 'error');
@@ -68,10 +89,23 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLogin, showToast }) => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (loading) return;
+
+    // Clear prev errors
+    const newErrors: Record<string, string> = {};
     
-    // Validation
-    if (!isValidEmail(email)) return showToast('Invalid Email Address', 'error');
-    if (password.length < 6) return showToast('Password must be at least 6 chars', 'error');
+    // Validate
+    if (!validateEmail(email)) newErrors.email = "Invalid email format";
+    if (!validatePassword(password)) newErrors.password = "Password must be 6+ chars with letters & numbers";
+    
+    if (!isLogin) {
+       if (!name.trim()) newErrors.name = "Name is required";
+       if (!isMobileVerified) newErrors.mobile = "Please verify mobile number first";
+    }
+
+    if (Object.keys(newErrors).length > 0) {
+      setErrors(newErrors);
+      return;
+    }
 
     setLoading(true);
     try {
@@ -80,22 +114,13 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLogin, showToast }) => {
         onLogin(user);
         showToast(`Welcome back, ${user.name}!`, 'success');
       } else {
-        // Registration Validation
-        if (!isMobileVerified) {
-          setLoading(false);
-          return showToast('Please verify your mobile number first', 'error');
-        }
-        if (!name) {
-          setLoading(false);
-          return showToast('Name is required', 'error');
-        }
-
-        // Pass extra data (adminSecret) if needed
+        // Registration
         const registerData: any = {
           name,
           email,
           password,
           mobile,
+          countryCode,
           role
         };
         if (role === UserRole.ADMIN) {
@@ -108,17 +133,12 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLogin, showToast }) => {
       }
     } catch (err: any) {
       showToast(err.message || 'Error processing request', 'error');
+      if (err.message.includes('email')) setErrors(prev => ({ ...prev, email: err.message }));
+      if (err.message.includes('Secret')) setErrors(prev => ({ ...prev, admin: err.message }));
     } finally {
       setLoading(false);
     }
   };
-
-  const switchMode = () => {
-    setIsLogin(!isLogin);
-    setIsMobileVerified(false);
-    setShowOtpInput(false);
-    setOtpCode('');
-  }
 
   return (
     <div className="min-h-screen flex flex-col justify-center py-12 sm:px-6 lg:px-8 bg-gradient-to-b from-gray-50 to-gray-200">
@@ -131,7 +151,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLogin, showToast }) => {
         </h2>
         <p className="mt-2 text-center text-sm text-gray-600">
           Or{' '}
-          <button onClick={switchMode} className="font-medium text-primary-600 hover:text-primary-500">
+          <button onClick={() => setIsLogin(!isLogin)} className="font-medium text-primary-600 hover:text-primary-500">
             {isLogin ? 'register for free' : 'login existing account'}
           </button>
         </p>
@@ -149,9 +169,9 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLogin, showToast }) => {
                   placeholder="John Doe" 
                   value={name} 
                   onChange={e => setName(e.target.value)} 
-                  className="pl-10"
-                  required 
+                  className={`pl-10 ${errors.name ? 'border-red-500' : ''}`}
                 />
+                {errors.name && <p className="text-xs text-red-500 mt-1">{errors.name}</p>}
               </div>
             )}
 
@@ -163,24 +183,32 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLogin, showToast }) => {
                 placeholder="user@example.com" 
                 value={email} 
                 onChange={e => setEmail(e.target.value)} 
-                className="pl-10"
-                required 
+                className={`pl-10 ${errors.email ? 'border-red-500' : ''}`}
               />
+              {errors.email && <p className="text-xs text-red-500 mt-1">{errors.email}</p>}
             </div>
 
             {!isLogin && (
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Mobile Verification</label>
                 <div className="flex gap-2">
+                  <div className="w-28">
+                    <Select 
+                      options={COUNTRY_CODES.map(c => ({ value: c.code, label: c.label }))}
+                      value={countryCode}
+                      onChange={e => setCountryCode(e.target.value)}
+                      className="mb-0"
+                    />
+                  </div>
                   <div className="relative flex-1">
                     <Smartphone className="absolute left-3 top-2.5 text-gray-400 w-5 h-5 z-10" />
                     <Input 
-                      placeholder="Mobile (10 digits)" 
+                      placeholder="Mobile Number" 
                       value={mobile} 
-                      onChange={e => setMobile(e.target.value)} 
-                      className="mb-0 pl-10"
+                      onChange={e => setMobile(e.target.value.replace(/\D/g,''))} 
+                      className={`mb-0 pl-10 ${errors.mobile ? 'border-red-500' : ''}`}
                       disabled={isMobileVerified}
-                      maxLength={10}
+                      maxLength={15}
                     />
                     {isMobileVerified && <ShieldCheck className="absolute right-3 top-2.5 text-green-500 w-5 h-5 z-10" />}
                   </div>
@@ -196,6 +224,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLogin, showToast }) => {
                     </Button>
                   )}
                 </div>
+                {errors.mobile && <p className="text-xs text-red-500 mt-1">{errors.mobile}</p>}
                 
                 {showOtpInput && !isMobileVerified && (
                   <div className="mt-2 flex gap-2 animate-in slide-in-from-top-2">
@@ -219,9 +248,9 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLogin, showToast }) => {
                 placeholder="••••••••" 
                 value={password} 
                 onChange={e => setPassword(e.target.value)} 
-                className="pl-10"
-                required 
+                className={`pl-10 ${errors.password ? 'border-red-500' : ''}`}
               />
+              {errors.password && <p className="text-xs text-red-500 mt-1">{errors.password}</p>}
             </div>
 
             {!isLogin && (
@@ -249,6 +278,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLogin, showToast }) => {
                       className="pl-10 mb-0 border-purple-300 focus:ring-purple-500"
                       required={role === UserRole.ADMIN}
                     />
+                    {errors.admin && <p className="text-xs text-red-500 mt-1">{errors.admin}</p>}
                     <p className="text-xs text-purple-700 mt-1">
                       * A secret key is required to create an Admin account.
                     </p>

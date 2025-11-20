@@ -1,5 +1,7 @@
+
 import React, { useState, useEffect } from 'react';
 import { User, UserRole, ToastMessage } from './types';
+import { storageService } from './services/storage';
 import { Navbar, Sidebar } from './components/layout/Navigation';
 import { LandingPage } from './components/pages/LandingPage';
 import { AuthPage } from './components/auth/AuthPage';
@@ -16,7 +18,6 @@ export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
-  // Session Persistence
   useEffect(() => {
     const savedUser = localStorage.getItem('zero_user');
     if (savedUser) {
@@ -46,7 +47,17 @@ export default function App() {
     setView('landing');
   };
 
-  // Render Content based on Role & View
+  const refreshUser = async () => {
+    if (!user) return;
+    try {
+      const freshUser = await storageService.getUser(user.id);
+      setUser(freshUser);
+      localStorage.setItem('zero_user', JSON.stringify(freshUser));
+    } catch (e) {
+      console.error("Failed to refresh user", e);
+    }
+  };
+
   const renderContent = () => {
     if (!user) return <AuthPage onLogin={handleLogin} showToast={showToast} />;
 
@@ -54,10 +65,12 @@ export default function App() {
     if (view === 'ai-tutor') return <AIChat />;
     if (view === 'resources') return <ResourceView user={user} />;
     if (view === 'admin-users' && user.role === UserRole.ADMIN) return <AdminView showToast={showToast} />;
+    
     if (['manage-courses', 'schedule', 'dashboard'].includes(view) && (user.role === UserRole.INSTRUCTOR || user.role === UserRole.ADMIN)) {
       return <InstructorView user={user} view={view} showToast={showToast} />;
     }
-    return <StudentView user={user} view={view} showToast={showToast} />;
+    
+    return <StudentView user={user} view={view} showToast={showToast} refreshUser={refreshUser} />;
   };
 
   return (
