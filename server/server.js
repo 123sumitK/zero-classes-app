@@ -53,6 +53,11 @@ const Course = mongoose.model('Course', CourseSchema);
 
 // --- ROUTES ---
 
+// Root Route (Health Check) - FIX FOR "Cannot GET /"
+app.get('/', (req, res) => {
+  res.send('✅ Zero Classes API is running successfully!');
+});
+
 // Auth
 app.post('/api/auth/register', async (req, res) => {
   try {
