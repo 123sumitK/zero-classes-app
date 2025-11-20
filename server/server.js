@@ -24,17 +24,27 @@ const ADMIN_SECRET = process.env.ADMIN_SECRET || 'zero-admin-secret-123';
 
 // --- DATABASE CONNECTION ---
 const connectDB = async () => {
+  const uri = process.env.MONGO_URI || 'mongodb://localhost:27017/zero-classes';
+  
+  if (!process.env.MONGO_URI) {
+    console.warn("⚠️ WARNING: MONGO_URI not found in env. Using localhost fallback.");
+  }
+
   try {
-    await mongoose.connect(process.env.MONGO_URI || 'mongodb://localhost:27017/zero-classes', {
-      useNewUrlParser: true,
-      useUnifiedTopology: true
-    });
-    console.log('✅ MongoDB Connected');
+    // Mongoose 6+ defaults are robust; removed deprecated options
+    await mongoose.connect(uri);
+    console.log('✅ MongoDB Connected Successfully');
     seedAdmin();
   } catch (err) {
-    console.error('❌ MongoDB Connection Error:', err);
+    console.error('❌ MongoDB Critical Connection Error:', err.message);
+    console.log('💡 TIP: If on Render, ensure MongoDB Atlas Network Access allows 0.0.0.0/0');
   }
 };
+
+// Monitor Connection Events
+mongoose.connection.on('disconnected', () => console.log('⚠️ MongoDB Disconnected'));
+mongoose.connection.on('reconnected', () => console.log('🔄 MongoDB Reconnected'));
+mongoose.connection.on('error', (err) => console.error('💥 MongoDB Error:', err));
 
 // --- SCHEMAS ---
 
