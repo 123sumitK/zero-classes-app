@@ -8,9 +8,13 @@ require('dotenv').config();
 const app = express();
 
 // Middleware
-// Allow both localhost and explicit IP for development
+// Allow Localhost (Dev) AND Vercel (Prod)
 app.use(cors({
-  origin: ['http://localhost:5173', 'http://127.0.0.1:5173'],
+  origin: [
+    'http://localhost:5173', 
+    'http://127.0.0.1:5173',
+    'https://zero-classes-app-jkyu.vercel.app' // Your Vercel URL
+  ],
   credentials: true
 }));
 app.use(express.json());
