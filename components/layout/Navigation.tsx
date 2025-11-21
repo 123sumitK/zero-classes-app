@@ -2,7 +2,7 @@
 import React from 'react';
 import { User, UserRole } from '../../types';
 import { Button } from '../ui/Shared';
-import { Menu, LogOut, Home, LayoutDashboard, BookOpen, Calendar, Users, Sparkles, FolderOpen } from 'lucide-react';
+import { Menu, LogOut, Home, LayoutDashboard, BookOpen, Calendar, Users, Sparkles, FolderOpen, UserCircle } from 'lucide-react';
 
 interface NavbarProps { 
   user: User | null; 
@@ -24,9 +24,18 @@ export const Navbar: React.FC<NavbarProps> = ({ user, onLogout, toggleSidebar, g
     </div>
     {user && (
       <div className="flex items-center gap-4">
-        <span className="text-sm text-gray-600 hidden sm:block">
-          Welcome, <span className="font-semibold text-gray-900">{user.name}</span> ({user.role})
-        </span>
+        <div className="flex items-center gap-2">
+           {user.profileImage ? (
+             <img src={user.profileImage} alt="Profile" className="w-8 h-8 rounded-full object-cover border border-gray-200" />
+           ) : (
+             <div className="w-8 h-8 bg-primary-100 rounded-full flex items-center justify-center text-primary-700 text-sm font-bold">
+                {user.name.charAt(0)}
+             </div>
+           )}
+           <span className="text-sm text-gray-600 hidden sm:block">
+             <span className="font-semibold text-gray-900">{user.name}</span>
+           </span>
+        </div>
         <Button variant="outline" onClick={onLogout} className="text-sm px-3 py-1">
           <LogOut className="w-4 h-4 sm:mr-2" />
           <span className="hidden sm:inline">Logout</span>
@@ -47,6 +56,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ user, currentView, setView, is
   const menuItems = [
     { id: 'landing', label: 'Home', icon: <Home size={20} />, roles: [UserRole.STUDENT, UserRole.INSTRUCTOR, UserRole.ADMIN] },
     { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={20} />, roles: [UserRole.STUDENT, UserRole.INSTRUCTOR, UserRole.ADMIN] },
+    { id: 'profile', label: 'My Profile', icon: <UserCircle size={20} />, roles: [UserRole.STUDENT, UserRole.INSTRUCTOR, UserRole.ADMIN] },
     { id: 'courses', label: 'My Courses', icon: <BookOpen size={20} />, roles: [UserRole.STUDENT] },
     { id: 'schedule', label: 'Schedule', icon: <Calendar size={20} />, roles: [UserRole.STUDENT, UserRole.INSTRUCTOR] },
     { id: 'resources', label: 'Shared Resources', icon: <FolderOpen size={20} />, roles: [UserRole.STUDENT, UserRole.INSTRUCTOR, UserRole.ADMIN] },

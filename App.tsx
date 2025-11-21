@@ -10,6 +10,7 @@ import { InstructorView } from './components/dashboard/InstructorView';
 import { AdminView } from './components/dashboard/AdminView';
 import { ResourceView } from './components/dashboard/ResourceView';
 import { AIChat } from './components/features/AIChat';
+import { ProfileManager } from './components/features/ProfileManager';
 import { ToastContainer } from './components/ui/Shared';
 
 export default function App() {
@@ -58,12 +59,23 @@ export default function App() {
     }
   };
 
+  // Theme Logic
+  const getThemeClass = () => {
+     if (!user) return 'bg-gray-50';
+     switch(user.theme) {
+       case 'dark': return 'bg-gray-900 text-gray-100 dark-mode';
+       case 'light-bright': return 'bg-orange-50 text-gray-900';
+       default: return 'bg-gray-50 text-gray-900';
+     }
+  };
+
   const renderContent = () => {
     if (!user) return <AuthPage onLogin={handleLogin} showToast={showToast} />;
 
     if (view === 'landing') return <LandingPage user={user} setView={setView} />;
     if (view === 'ai-tutor') return <AIChat />;
     if (view === 'resources') return <ResourceView user={user} />;
+    if (view === 'profile') return <ProfileManager user={user} refreshUser={refreshUser} showToast={showToast} />;
     if (view === 'admin-users' && user.role === UserRole.ADMIN) return <AdminView showToast={showToast} />;
     
     if (['manage-courses', 'schedule', 'dashboard'].includes(view) && (user.role === UserRole.INSTRUCTOR || user.role === UserRole.ADMIN)) {
@@ -74,7 +86,7 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-gray-50">
+    <div className={`min-h-screen flex flex-col transition-colors duration-300 ${getThemeClass()}`}>
       <Navbar 
         user={user} 
         onLogout={handleLogout} 

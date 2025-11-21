@@ -24,18 +24,6 @@ const ADMIN_SECRET = process.env.ADMIN_SECRET || 'zero-admin-secret-123';
 // --- DATABASE CONNECTION ---
 const connectDB = async () => {
   const uri = process.env.MONGO_URI || 'mongodb://localhost:27017/zero-classes';
-  
-  try {
-    if (uri.startsWith('mongodb+srv://')) {
-        const parts = uri.split('@');
-        if (parts.length > 1) {
-            const creds = parts[0].split('//')[1];
-            const [user, pass] = creds.split(':');
-            console.log(`[DB Debug] Connecting as User: "${user}"`);
-        }
-    }
-  } catch (e) { console.log('[DB Debug] Could not parse URI for debugging'); }
-
   try {
     await mongoose.connect(uri);
     console.log('✅ MongoDB Connected Successfully');
@@ -61,9 +49,69 @@ const ScheduleSchema = new mongoose.Schema({
   id: { type: String, required: true },
   courseId: { type: String, required: true },
   topic: { type: String, required: true },
+  agenda: String, 
   date: { type: String, required: true },
   time: { type: String, required: true },
-  meetingUrl: { type: String, default: '' }
+  meetingUrl: { type: String, default: '' },
+  instructorName: String
+}, { _id: false });
+
+const QuestionSchema = new mongoose.Schema({
+  id: String,
+  text: String,
+  options: [String],
+  correctIndex: Number,
+  explanation: String
+}, { _id: false });
+
+const QuizSchema = new mongoose.Schema({
+  courseId: String,
+  title: String,
+  timeLimit: Number,
+  questions: [QuestionSchema],
+  createdBy: String,
+  lastEditedBy: String,
+  updatedAt: { type: Date, default: Date.now }
+});
+
+const QuizResultSchema = new mongoose.Schema({
+  quizId: String,
+  studentId: String,
+  score: Number,
+  total: Number,
+  date: { type: Date, default: Date.now }
+});
+
+const AssignmentSchema = new mongoose.Schema({
+  courseId: String,
+  title: String,
+  description: String,
+  dueDate: String,
+  createdBy: String,
+  lastEditedBy: String,
+  updatedAt: { type: Date, default: Date.now }
+});
+
+const SubmissionSchema = new mongoose.Schema({
+  assignmentId: String,
+  studentId: String,
+  fileUrl: String,
+  submittedAt: { type: Date, default: Date.now },
+  grade: Number,
+  feedback: String,
+  studentReaction: String
+});
+
+const InstructorProfileSchema = new mongoose.Schema({
+  qualification: String,
+  experience: String,
+  bio: String
+}, { _id: false });
+
+const ActivityLogSchema = new mongoose.Schema({
+  action: String,
+  date: { type: Date, default: Date.now },
+  details: String
 }, { _id: false });
 
 const UserSchema = new mongoose.Schema({
@@ -74,7 +122,11 @@ const UserSchema = new mongoose.Schema({
   countryCode: { type: String, default: '+91' },
   role: { type: String, enum: ['STUDENT', 'INSTRUCTOR', 'ADMIN'], default: 'STUDENT' },
   enrolledCourses: [{ type: String }], 
-  progress: { type: Map, of: [String] } 
+  progress: { type: Map, of: [String] },
+  profileImage: String,
+  theme: { type: String, default: 'bright' },
+  instructorProfile: InstructorProfileSchema,
+  activityLog: [ActivityLogSchema]
 });
 
 const CourseSchema = new mongoose.Schema({
@@ -82,12 +134,20 @@ const CourseSchema = new mongoose.Schema({
   description: String,
   price: Number,
   instructorId: String,
+  thumbnailUrl: String,
   materials: [MaterialSchema], 
-  schedules: [ScheduleSchema] 
+  schedules: [ScheduleSchema],
+  createdBy: String,
+  lastEditedBy: String,
+  updatedAt: { type: Date, default: Date.now }
 });
 
 const User = mongoose.model('User', UserSchema);
 const Course = mongoose.model('Course', CourseSchema);
+const Quiz = mongoose.model('Quiz', QuizSchema);
+const QuizResult = mongoose.model('QuizResult', QuizResultSchema);
+const Assignment = mongoose.model('Assignment', AssignmentSchema);
+const Submission = mongoose.model('Submission', SubmissionSchema);
 
 const seedAdmin = async () => {
   try {
@@ -116,7 +176,7 @@ app.get('/', (req, res) => {
   res.send('✅ Zero Classes API is running successfully!');
 });
 
-// 1. Auth & OTP
+// Auth
 app.post('/api/auth/send-otp', async (req, res) => {
   const { target, type } = req.body; 
   const code = Math.floor(1000 + Math.random() * 9000).toString();
@@ -138,15 +198,16 @@ app.post('/api/auth/verify-otp', (req, res) => {
 app.post('/api/auth/register', async (req, res) => {
   try {
     const { name, email, password, mobile, countryCode, role, adminSecret } = req.body;
-    
     if (role === 'ADMIN' && adminSecret !== ADMIN_SECRET) {
       return res.status(403).json({ error: 'Invalid Admin Secret Key' });
     }
-
     const existing = await User.findOne({ email });
     if (existing) return res.status(400).json({ error: 'Email already registered' });
-
-    const user = await User.create({ name, email, password, mobile, countryCode, role, enrolledCourses: [] });
+    
+    const user = await User.create({ 
+      name, email, password, mobile, countryCode, role, enrolledCourses: [], theme: 'bright',
+      activityLog: [{ action: 'REGISTER', date: new Date() }]
+    });
     res.json(user);
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -156,7 +217,12 @@ app.post('/api/auth/register', async (req, res) => {
 app.post('/api/auth/login', async (req, res) => {
   try {
     const { email, password } = req.body;
-    const user = await User.findOne({ email, password });
+    // Find and update activity log atomically
+    const user = await User.findOneAndUpdate(
+      { email, password },
+      { $push: { activityLog: { action: 'LOGIN', date: new Date() } } },
+      { new: true }
+    );
     if (!user) return res.status(401).json({ error: 'Invalid credentials' });
     res.json(user);
   } catch (e) {
@@ -164,7 +230,7 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
-// 2. Users
+// Users
 app.get('/api/users', async (req, res) => {
   try {
     const users = await User.find();
@@ -180,36 +246,32 @@ app.get('/api/users/:id', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// Progress Endpoint
+app.put('/api/users/:id', async (req, res) => {
+  try {
+    const { _id, password, activityLog, ...updates } = req.body; 
+    const user = await User.findByIdAndUpdate(req.params.id, updates, { new: true });
+    res.json(user);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 app.post('/api/users/:id/progress', async (req, res) => {
   const { courseId, materialId } = req.body;
   try {
-    // Logic to toggle progress in a Map
-    // MongoDB Map updates can be tricky, reading/writing is safer for MVP
     const user = await User.findById(req.params.id);
     if (!user) return res.status(404).json({ error: 'User not found' });
-
-    // Ensure progress map exists
     if (!user.progress) user.progress = new Map();
-    
-    // Get current list for this course
     let currentList = user.progress.get(courseId) || [];
-    
     if (currentList.includes(materialId)) {
-      // Remove
       currentList = currentList.filter(id => id !== materialId);
     } else {
-      // Add
       currentList.push(materialId);
     }
-    
     user.progress.set(courseId, currentList);
+    // Track activity
+    user.activityLog.push({ action: 'STUDY_PROGRESS', date: new Date(), details: `Toggled material ${materialId}` });
     await user.save();
-    
-    // Return simple object format
     res.json(Object.fromEntries(user.progress));
   } catch (e) {
-    console.error("Progress Error:", e);
     res.status(500).json({ error: e.message });
   }
 });
@@ -221,21 +283,21 @@ app.patch('/api/users/:id/role', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// 3. Enrollment (Atomic) - Returns Updated User
+// Enrollment
 app.post('/api/enroll', async (req, res) => {
   const { userId, courseId } = req.body;
   try {
     const updatedUser = await User.findByIdAndUpdate(userId, { 
-      $addToSet: { enrolledCourses: courseId } 
-    }, { new: true }); // Return new doc
+      $addToSet: { enrolledCourses: courseId },
+      $push: { activityLog: { action: 'ENROLL', date: new Date(), details: `Enrolled in ${courseId}` } }
+    }, { new: true });
     res.json(updatedUser);
   } catch (e) {
-    console.error("Enroll Error:", e);
     res.status(500).json({ error: e.message });
   }
 });
 
-// 4. Courses
+// Courses
 app.get('/api/courses', async (req, res) => {
   try {
     const courses = await Course.find();
@@ -245,15 +307,28 @@ app.get('/api/courses', async (req, res) => {
 
 app.post('/api/courses', async (req, res) => {
   try {
-    const course = await Course.create(req.body);
+    const { id, ...courseData } = req.body;
+    const course = await Course.create({
+        ...courseData,
+        createdAt: new Date(),
+        updatedAt: new Date()
+    });
+    // Log creation
+    await User.findByIdAndUpdate(courseData.instructorId, { 
+       $push: { activityLog: { action: 'CREATE_COURSE', date: new Date(), details: course.title } } 
+    });
     res.json(course);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 app.put('/api/courses/:id', async (req, res) => {
   try {
-    const { _id, id, ...updates } = req.body;
-    const course = await Course.findByIdAndUpdate(req.params.id, updates, { new: true });
+    const { _id, id, createdBy, createdAt, ...updates } = req.body;
+    // Only update allowed fields, preserve creation info
+    const course = await Course.findByIdAndUpdate(req.params.id, {
+        ...updates,
+        updatedAt: new Date()
+    }, { new: true });
     res.json(course);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -265,37 +340,24 @@ app.delete('/api/courses/:id', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// 5. Materials & Schedules
+// Materials & Schedules (Atomic)
 app.post('/api/courses/:id/materials', async (req, res) => {
   try {
-    const course = await Course.findByIdAndUpdate(
-      req.params.id,
-      { $push: { materials: req.body } },
-      { new: true, runValidators: true }
-    );
-    if (!course) return res.status(404).json({ error: 'Course not found' });
+    const course = await Course.findByIdAndUpdate(req.params.id, { $push: { materials: req.body } }, { new: true });
     res.json(course);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 app.delete('/api/courses/:id/materials/:matId', async (req, res) => {
   try {
-    const course = await Course.findByIdAndUpdate(
-      req.params.id,
-      { $pull: { materials: { id: req.params.matId } } },
-      { new: true }
-    );
+    const course = await Course.findByIdAndUpdate(req.params.id, { $pull: { materials: { id: req.params.matId } } }, { new: true });
     res.json(course);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 app.post('/api/courses/:id/schedules', async (req, res) => {
   try {
-    const course = await Course.findByIdAndUpdate(
-      req.params.id,
-      { $push: { schedules: req.body } },
-      { new: true, runValidators: true }
-    );
+    const course = await Course.findByIdAndUpdate(req.params.id, { $push: { schedules: req.body } }, { new: true });
     res.json(course);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -313,14 +375,107 @@ app.put('/api/courses/:id/schedules/:schedId', async (req, res) => {
 
 app.delete('/api/courses/:id/schedules/:schedId', async (req, res) => {
   try {
-    const course = await Course.findByIdAndUpdate(
-      req.params.id,
-      { $pull: { schedules: { id: req.params.schedId } } },
-      { new: true }
-    );
+    const course = await Course.findByIdAndUpdate(req.params.id, { $pull: { schedules: { id: req.params.schedId } } }, { new: true });
     res.json(course);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
+
+// QUIZZES
+app.get('/api/quizzes', async (req, res) => {
+    try {
+        const quizzes = await Quiz.find();
+        res.json(quizzes);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/quizzes', async (req, res) => {
+    try {
+        const quiz = await Quiz.create({
+            ...req.body,
+            updatedAt: new Date()
+        });
+        res.json(quiz);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete('/api/quizzes/:id', async (req, res) => {
+    try {
+        await Quiz.findByIdAndDelete(req.params.id);
+        res.json({ success: true });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// RESULTS
+app.get('/api/results/:studentId', async (req, res) => {
+    try {
+        const results = await QuizResult.find({ studentId: req.params.studentId });
+        res.json(results);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/results', async (req, res) => {
+    try {
+        const result = await QuizResult.create(req.body);
+        res.json(result);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ASSIGNMENTS
+app.get('/api/assignments/:courseId', async (req, res) => {
+  try {
+    const assignments = await Assignment.find({ courseId: req.params.courseId });
+    res.json(assignments);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/assignments', async (req, res) => {
+  try {
+    const assignment = await Assignment.create({
+        ...req.body,
+        updatedAt: new Date()
+    });
+    res.json(assignment);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete('/api/assignments/:id', async (req, res) => {
+  try {
+    await Assignment.findByIdAndDelete(req.params.id);
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/submissions/:assignmentId', async (req, res) => {
+  try {
+    const submissions = await Submission.find({ assignmentId: req.params.assignmentId });
+    res.json(submissions);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/submissions', async (req, res) => {
+  try {
+    const sub = await Submission.create(req.body);
+    res.json(sub);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Grading & Feedback
+app.put('/api/submissions/:id/grade', async (req, res) => {
+  try {
+    const { grade, feedback } = req.body;
+    const sub = await Submission.findByIdAndUpdate(req.params.id, { grade, feedback }, { new: true });
+    res.json(sub);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.put('/api/submissions/:id/react', async (req, res) => {
+  try {
+    const { reaction } = req.body;
+    const sub = await Submission.findByIdAndUpdate(req.params.id, { studentReaction: reaction }, { new: true });
+    res.json(sub);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));

@@ -1,23 +1,29 @@
 
 import React from 'react';
-import { AlertCircle, CheckCircle, Info, X, Check } from 'lucide-react';
-import { ToastMessage } from '../../types';
+import { AlertCircle, CheckCircle, Info, X, Check, User, Edit3 } from 'lucide-react';
+import { ToastMessage, UserRole } from '../../types';
 
 // --- BUTTON ---
 interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: 'primary' | 'secondary' | 'danger' | 'outline';
+  size?: 'sm' | 'md' | 'lg';
 }
-export const Button: React.FC<ButtonProps> = ({ children, variant = 'primary', className = '', ...props }) => {
-  const baseStyle = "px-4 py-2 rounded-md font-medium transition-all focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed";
+export const Button: React.FC<ButtonProps> = ({ children, variant = 'primary', size = 'md', className = '', ...props }) => {
+  const baseStyle = "rounded-md font-medium transition-all focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed";
   const variants = {
     primary: "bg-primary-500 text-white hover:bg-primary-600 focus:ring-primary-500",
     secondary: "bg-gray-600 text-white hover:bg-gray-700 focus:ring-gray-500",
     danger: "bg-red-600 text-white hover:bg-red-700 focus:ring-red-500",
     outline: "border-2 border-primary-500 text-primary-600 hover:bg-primary-50 focus:ring-primary-500"
   };
+  const sizes = {
+    sm: "px-3 py-1.5 text-sm",
+    md: "px-4 py-2",
+    lg: "px-6 py-3 text-lg"
+  };
 
   return (
-    <button className={`${baseStyle} ${variants[variant]} ${className}`} {...props}>
+    <button className={`${baseStyle} ${variants[variant]} ${sizes[size]} ${className}`} {...props}>
       {children}
     </button>
   );
@@ -96,6 +102,39 @@ export const ProgressBar: React.FC<{ value: number; className?: string }> = ({ v
     ></div>
   </div>
 );
+
+// --- AUDIT TAG ---
+interface AuditTagProps {
+  createdBy?: string;
+  lastEditedBy?: string;
+  updatedAt?: string;
+  userRole: UserRole;
+}
+export const AuditTag: React.FC<AuditTagProps> = ({ createdBy, lastEditedBy, updatedAt, userRole }) => {
+  if (userRole === UserRole.STUDENT) return null; // Hide from students
+  
+  if (!createdBy && !lastEditedBy) return null;
+
+  return (
+    <div className="flex items-center gap-3 mt-2 text-xs text-gray-500 bg-gray-50 px-2 py-1 rounded border border-gray-100 w-fit">
+      {lastEditedBy ? (
+        <div className="flex items-center gap-1">
+          <Edit3 size={10} /> Edited by <span className="font-medium">{lastEditedBy}</span>
+        </div>
+      ) : (
+        <div className="flex items-center gap-1">
+          <User size={10} /> Created by <span className="font-medium">{createdBy}</span>
+        </div>
+      )}
+      {updatedAt && (
+        <span className="text-gray-400">
+          • {new Date(updatedAt).toLocaleDateString()}
+        </span>
+      )}
+    </div>
+  );
+};
+
 
 // --- TOAST ---
 export const ToastContainer: React.FC<{ toasts: ToastMessage[]; removeToast: (id: string) => void }> = ({ toasts, removeToast }) => {

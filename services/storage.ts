@@ -1,5 +1,5 @@
 
-import { User, Course, UserRole, ClassSchedule, CourseMaterial } from '../types';
+import { User, Course, UserRole, ClassSchedule, CourseMaterial, Quiz, QuizResult, Assignment, Submission } from '../types';
 
 const getApiUrl = () => {
   try {
@@ -7,11 +7,6 @@ const getApiUrl = () => {
     if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_API_URL) {
       // @ts-ignore
       return import.meta.env.VITE_API_URL;
-    }
-  } catch (e) {}
-  try {
-    if (typeof process !== 'undefined' && process.env && process.env.VITE_API_URL) {
-      return process.env.VITE_API_URL;
     }
   } catch (e) {}
   return 'http://127.0.0.1:3000/api';
@@ -24,7 +19,10 @@ const formatUser = (u: any): User => ({
   id: u._id || u.id,
   enrolledCourseIds: Array.isArray(u.enrolledCourses) ? u.enrolledCourses.map((id: any) => String(id)) : [],
   progress: u.progress || {},
-  countryCode: u.countryCode || '+91'
+  countryCode: u.countryCode || '+91',
+  theme: u.theme || 'bright',
+  instructorProfile: u.instructorProfile || {},
+  activityLog: Array.isArray(u.activityLog) ? u.activityLog : []
 });
 
 const formatCourse = (c: any): Course => ({ 
@@ -35,207 +33,163 @@ const formatCourse = (c: any): Course => ({
 });
 
 export const storageService = {
-  // --- AUTH & OTP ---
-  sendOTP: async (target: string, type: 'email' | 'mobile'): Promise<boolean> => {
-    try {
-      const res = await fetch(`${API_URL}/auth/send-otp`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ target, type })
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
-      return true;
-    } catch (error) {
-      console.error('Send OTP Error:', error);
-      throw error;
-    }
+  // --- AUTH ---
+  sendOTP: async (target: string, type: 'email' | 'mobile') => {
+    const res = await fetch(`${API_URL}/auth/send-otp`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ target, type }) });
+    if (!res.ok) throw new Error((await res.json()).error);
+    return true;
+  },
+  verifyOTP: async (target: string, code: string) => {
+    const res = await fetch(`${API_URL}/auth/verify-otp`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ target, code }) });
+    return res.ok ? (await res.json()).success : false;
+  },
+  login: async (email: string, password?: string) => {
+    const res = await fetch(`${API_URL}/auth/login`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ email, password }) });
+    if (!res.ok) throw new Error((await res.json()).error);
+    return formatUser(await res.json());
+  },
+  register: async (user: Partial<User>) => {
+    const res = await fetch(`${API_URL}/auth/register`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(user) });
+    if (!res.ok) throw new Error((await res.json()).error);
+    return formatUser(await res.json());
   },
 
-  verifyOTP: async (target: string, code: string): Promise<boolean> => {
-    try {
-      const res = await fetch(`${API_URL}/auth/verify-otp`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ target, code })
-      });
-      const data = await res.json();
-      if (!res.ok) return false;
-      return data.success;
-    } catch (error) { return false; }
-  },
-
-  login: async (email: string, password?: string): Promise<User> => {
-    const res = await fetch(`${API_URL}/auth/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password })
-    });
+  // --- USERS ---
+  getUser: async (id: string) => formatUser(await (await fetch(`${API_URL}/users/${id}`)).json()),
+  getUsers: async () => {
+    const res = await fetch(`${API_URL}/users`);
     const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Login failed');
-    return formatUser(data);
+    return Array.isArray(data) ? data.map(formatUser) : [];
+  },
+  updateUser: async (id: string, updates: Partial<User>) => {
+    const res = await fetch(`${API_URL}/users/${id}`, { method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(updates) });
+    return formatUser(await res.json());
+  },
+  updateUserRole: async (userId: string, role: UserRole) => {
+    await fetch(`${API_URL}/users/${userId}/role`, { method: 'PATCH', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ role }) });
   },
 
-  register: async (user: Partial<User>): Promise<User> => {
-    const res = await fetch(`${API_URL}/auth/register`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(user)
-    });
+  // --- COURSES ---
+  getCourses: async () => {
+    const res = await fetch(`${API_URL}/courses`);
     const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Registration failed');
-    return formatUser(data);
+    return Array.isArray(data) ? data.map(formatCourse) : [];
   },
-
-  // --- DATA ---
-  getUser: async (userId: string): Promise<User> => {
-    const res = await fetch(`${API_URL}/users/${userId}`);
-    const data = await res.json();
-    if (!res.ok) throw new Error('Failed to fetch user');
-    return formatUser(data);
+  addCourse: async (course: Omit<Course, 'id'>, userName?: string) => {
+    const payload = { ...course, createdBy: userName };
+    const res = await fetch(`${API_URL}/courses`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload) });
+    if (!res.ok) throw new Error('Failed to create course');
+    return formatCourse(await res.json());
   },
-
-  getUsers: async (): Promise<User[]> => {
-    try {
-      const res = await fetch(`${API_URL}/users`);
-      const data = await res.json();
-      if (!Array.isArray(data)) return [];
-      return data.map(formatUser);
-    } catch (e) { return []; }
+  updateCourse: async (id: string, updates: Partial<Course>, userName?: string) => {
+    // Strip ID fields to prevent immutable error
+    const { id: _id, ...cleanUpdates } = updates as any;
+    const payload = { ...cleanUpdates, lastEditedBy: userName };
+    await fetch(`${API_URL}/courses/${id}`, { method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload) });
   },
+  deleteCourse: async (id: string) => { await fetch(`${API_URL}/courses/${id}`, { method: 'DELETE' }); },
+  enrollStudent: async (userId: string, courseId: string) => formatUser(await (await fetch(`${API_URL}/enroll`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ userId, courseId }) })).json()),
 
-  getCourses: async (): Promise<Course[]> => {
-    try {
-      const res = await fetch(`${API_URL}/courses`);
-      const data = await res.json();
-      if (!Array.isArray(data)) return [];
-      return data.map(formatCourse);
-    } catch (e) { return []; }
-  },
-
-  // --- CLOUDINARY UPLOAD ---
-  uploadToCloudinary: async (file: File, cloudName: string, preset: string): Promise<string> => {
+  // --- UPLOAD ---
+  uploadToCloudinary: async (file: File, cloudName: string, preset: string) => {
     const formData = new FormData();
     formData.append('file', file);
     formData.append('upload_preset', preset);
+    formData.append('resource_type', 'auto');
     
-    // Determine resource type manually to prevent PDF 401 errors
-    // Images => 'image'
-    // PDFs, Docs, Zips => 'raw'
     const isImage = file.type.startsWith('image/');
     const resourceType = isImage ? 'image' : 'raw';
-
-    const res = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/${resourceType}/upload`, {
-      method: 'POST',
-      body: formData
-    });
     
+    const res = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/${resourceType}/upload`, { method: 'POST', body: formData });
     const data = await res.json();
     if (!res.ok) {
-        console.error("Cloudinary Error Details:", data);
-        throw new Error(data.error?.message || 'Cloudinary upload failed');
+        console.error('Cloudinary Error Details:', data);
+        throw new Error(data.error?.message || 'Upload failed');
     }
-    console.log("Uploaded File URL:", data.secure_url);
     return data.secure_url;
   },
 
-  // --- MODIFIERS ---
-  addCourse: async (course: Course): Promise<Course> => {
-    const { id, ...courseData } = course;
-    const res = await fetch(`${API_URL}/courses`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(courseData)
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Failed to create course');
-    return formatCourse(data);
-  },
-
-  updateCourse: async (courseId: string, updates: Partial<Course>) => {
-    await fetch(`${API_URL}/courses/${courseId}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(updates)
-    });
-  },
-
-  deleteCourse: async (courseId: string) => {
-    await fetch(`${API_URL}/courses/${courseId}`, { method: 'DELETE' });
-  },
-
-  updateUserRole: async (userId: string, newRole: UserRole) => {
-    await fetch(`${API_URL}/users/${userId}/role`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ role: newRole })
-    });
-  },
-
   // --- MATERIALS & SCHEDULES ---
-  addMaterial: async (courseId: string, material: CourseMaterial) => {
-    const payload = {
-      ...material,
-      uploadedAt: typeof material.uploadedAt === 'string' ? material.uploadedAt : new Date().toISOString()
-    };
-    try {
-        const res = await fetch(`${API_URL}/courses/${courseId}/materials`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-        });
-        if (res.status === 404) throw new Error("Backend route not found (404). Did you restart the server?");
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || `Upload failed: ${res.statusText}`);
-    } catch (e: any) {
-        console.error(e);
-        throw e;
+  addMaterial: async (cid: string, mat: CourseMaterial) => {
+    const safeMat = { ...mat, uploadedAt: new Date().toISOString() };
+    const res = await fetch(`${API_URL}/courses/${cid}/materials`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(safeMat) });
+    if (!res.ok) {
+        const err = await res.text();
+        if (res.status === 404) throw new Error('Route not found. Restart Server.');
+        throw new Error(err || 'Failed to upload');
     }
   },
-
-  deleteMaterial: async (courseId: string, materialId: string) => {
-    await fetch(`${API_URL}/courses/${courseId}/materials/${materialId}`, { method: 'DELETE' });
+  deleteMaterial: async (cid: string, mid: string) => {
+    await fetch(`${API_URL}/courses/${cid}/materials/${mid}`, { method: 'DELETE' });
   },
-
-  addSchedule: async (courseId: string, schedule: ClassSchedule) => {
-    await fetch(`${API_URL}/courses/${courseId}/schedules`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(schedule)
-    });
+  addSchedule: async (cid: string, sch: ClassSchedule) => {
+    await fetch(`${API_URL}/courses/${cid}/schedules`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(sch) });
   },
-
-  updateSchedule: async (courseId: string, schedule: ClassSchedule) => {
-    await fetch(`${API_URL}/courses/${courseId}/schedules/${schedule.id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(schedule)
-    });
+  updateSchedule: async (cid: string, sch: ClassSchedule) => {
+    await fetch(`${API_URL}/courses/${cid}/schedules/${sch.id}`, { method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(sch) });
   },
-
-  deleteSchedule: async (courseId: string, scheduleId: string) => {
-    await fetch(`${API_URL}/courses/${courseId}/schedules/${scheduleId}`, { method: 'DELETE' });
+  deleteSchedule: async (cid: string, sid: string) => {
+    await fetch(`${API_URL}/courses/${cid}/schedules/${sid}`, { method: 'DELETE' });
   },
-
-  enrollStudent: async (userId: string, courseId: string): Promise<User> => {
-    const res = await fetch(`${API_URL}/enroll`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId, courseId })
-    });
-    if (!res.ok) throw new Error("Enrollment failed");
-    // Return the updated user object from the server
-    const updatedUser = await res.json();
-    return formatUser(updatedUser);
-  },
-  
-  toggleProgress: async (userId: string, courseId: string, materialId: string): Promise<Record<string, string[]>> => {
-    const res = await fetch(`${API_URL}/users/${userId}/progress`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ courseId, materialId })
-    });
-    if (!res.ok) throw new Error("Progress update failed");
+  toggleProgress: async (uid: string, cid: string, mid: string) => {
+    const res = await fetch(`${API_URL}/users/${uid}/progress`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ courseId: cid, materialId: mid }) });
     return await res.json();
+  },
+
+  // --- QUIZ SYSTEM ---
+  getQuizzes: async (): Promise<Quiz[]> => {
+    try {
+        const res = await fetch(`${API_URL}/quizzes`);
+        const data = await res.json();
+        return Array.isArray(data) ? data.map((q: any) => ({...q, id: q._id || q.id})) : [];
+    } catch(e) { return []; }
+  },
+  addQuiz: async (quiz: Partial<Quiz>, userName?: string) => {
+    const payload = { ...quiz, createdBy: userName };
+    await fetch(`${API_URL}/quizzes`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload) });
+  },
+  deleteQuiz: async (id: string) => {
+    await fetch(`${API_URL}/quizzes/${id}`, { method: 'DELETE' });
+  },
+  submitQuizResult: async (result: Partial<QuizResult>) => {
+    await fetch(`${API_URL}/results`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(result) });
+  },
+  getStudentResults: async (studentId: string): Promise<QuizResult[]> => {
+    try {
+        const res = await fetch(`${API_URL}/results/${studentId}`);
+        return await res.json();
+    } catch(e) { return []; }
+  },
+
+  // --- ASSIGNMENTS ---
+  getAssignments: async (courseId: string): Promise<Assignment[]> => {
+    try {
+      const res = await fetch(`${API_URL}/assignments/${courseId}`);
+      const data = await res.json();
+      return Array.isArray(data) ? data.map((a: any) => ({...a, id: a._id || a.id})) : [];
+    } catch(e) { return []; }
+  },
+  addAssignment: async (assign: Partial<Assignment>, userName?: string) => {
+    const payload = { ...assign, createdBy: userName };
+    await fetch(`${API_URL}/assignments`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload) });
+  },
+  deleteAssignment: async (id: string) => {
+    await fetch(`${API_URL}/assignments/${id}`, { method: 'DELETE' });
+  },
+  getSubmissions: async (assignmentId: string): Promise<Submission[]> => {
+     try {
+      const res = await fetch(`${API_URL}/submissions/${assignmentId}`);
+      const data = await res.json();
+      return Array.isArray(data) ? data.map((s: any) => ({...s, id: s._id || s.id})) : [];
+    } catch(e) { return []; }
+  },
+  submitAssignment: async (sub: Partial<Submission>) => {
+    await fetch(`${API_URL}/submissions`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(sub) });
+  },
+  gradeSubmission: async (id: string, grade: number, feedback: string) => {
+    await fetch(`${API_URL}/submissions/${id}/grade`, { method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ grade, feedback }) });
+  },
+  reactToSubmission: async (id: string, reaction: string) => {
+    await fetch(`${API_URL}/submissions/${id}/react`, { method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ reaction }) });
   }
 };
