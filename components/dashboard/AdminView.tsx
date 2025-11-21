@@ -1,9 +1,8 @@
-
 import React, { useState, useEffect } from 'react';
 import { User, UserRole, Course, PlatformSettings } from '../../types';
 import { storageService } from '../../services/storage';
-import { Card, Skeleton, Button, Input, Modal, Pagination, SearchInput } from '../ui/Shared';
-import { Trash2, Edit2, Save, X, Activity, Search, Settings as SettingsIcon, Globe } from 'lucide-react';
+import { Card, Skeleton, Button, Input, Modal, Pagination, SearchInput, PageHeader, Badge } from '../ui/Shared';
+import { Trash2, Edit2, Save, X, Activity, Search, Settings as SettingsIcon, Globe, ShieldCheck } from 'lucide-react';
 
 export const AdminView: React.FC<{ showToast: (m: string, t: any) => void }> = ({ showToast }) => {
   const [users, setUsers] = useState<User[]>([]);
@@ -99,17 +98,24 @@ export const AdminView: React.FC<{ showToast: (m: string, t: any) => void }> = (
 
   const filteredUsers = users.filter(u => u.name.toLowerCase().includes(searchTerm.toLowerCase()) || u.email.toLowerCase().includes(searchTerm.toLowerCase()));
   
-  // Pagination Logic
   const totalPages = Math.ceil(filteredUsers.length / ITEMS_PER_PAGE);
   const paginatedUsers = filteredUsers.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
 
   return (
-    <div className="space-y-6 relative">
-      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center border-b border-gray-200 pb-2 gap-4">
-        <div className="flex gap-4 overflow-x-auto">
-            <button className={`pb-2 px-4 font-medium whitespace-nowrap ${activeTab === 'users' ? 'border-b-2 border-primary-500 text-primary-600' : 'text-gray-500'}`} onClick={() => setActiveTab('users')}>User Management</button>
-            <button className={`pb-2 px-4 font-medium whitespace-nowrap ${activeTab === 'courses' ? 'border-b-2 border-primary-500 text-primary-600' : 'text-gray-500'}`} onClick={() => setActiveTab('courses')}>Course Management</button>
-            <button className={`pb-2 px-4 font-medium whitespace-nowrap ${activeTab === 'settings' ? 'border-b-2 border-primary-500 text-primary-600' : 'text-gray-500'}`} onClick={() => setActiveTab('settings')}>Platform Settings</button>
+    <div>
+      <PageHeader 
+          title="Administration Console" 
+          description="Manage system users, courses, and platform configuration."
+          theme="blue"
+          icon={<ShieldCheck className="text-white" size={24} />}
+          imageSrc="https://images.unsplash.com/photo-1551288049-bebda4e38f71?auto=format&fit=crop&q=80"
+      />
+
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center border-b border-gray-200 pb-4 mb-6 gap-4">
+        <div className="bg-gray-100 p-1 rounded-lg inline-flex overflow-x-auto">
+            <button className={`py-1.5 px-4 rounded-md text-sm font-medium transition-all whitespace-nowrap ${activeTab === 'users' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`} onClick={() => setActiveTab('users')}>Users</button>
+            <button className={`py-1.5 px-4 rounded-md text-sm font-medium transition-all whitespace-nowrap ${activeTab === 'courses' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`} onClick={() => setActiveTab('courses')}>Courses</button>
+            <button className={`py-1.5 px-4 rounded-md text-sm font-medium transition-all whitespace-nowrap ${activeTab === 'settings' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`} onClick={() => setActiveTab('settings')}>Settings</button>
         </div>
         {activeTab === 'users' && (
            <SearchInput value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
@@ -117,15 +123,15 @@ export const AdminView: React.FC<{ showToast: (m: string, t: any) => void }> = (
       </div>
 
       {activeTab === 'users' && (
-        <Card title="Platform Users" className="overflow-hidden">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Email</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Role</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                  <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">User</th>
+                  <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Email</th>
+                  <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Role</th>
+                  <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Actions</th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
@@ -135,20 +141,18 @@ export const AdminView: React.FC<{ showToast: (m: string, t: any) => void }> = (
                   ))
                 ) : (
                   paginatedUsers.map(u => (
-                    <tr key={u.id} className="hover:bg-gray-50">
-                      <td className="px-6 py-4 text-sm font-medium text-gray-900 flex items-center gap-2 whitespace-nowrap">
-                        {u.profileImage ? <img src={u.profileImage} className="w-6 h-6 rounded-full" /> : <div className="w-6 h-6 rounded-full bg-gray-200" />}
+                    <tr key={u.id} className="hover:bg-gray-50 transition-colors">
+                      <td className="px-6 py-4 text-sm font-medium text-gray-900 flex items-center gap-3 whitespace-nowrap">
+                        {u.profileImage ? <img src={u.profileImage} className="w-8 h-8 rounded-full object-cover" /> : <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-xs text-gray-500 font-bold">{u.name.charAt(0)}</div>}
                         {u.name}
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-500 whitespace-nowrap">{u.email}</td>
                       <td className="px-6 py-4 text-sm text-gray-500 whitespace-nowrap">
-                        <span className={`px-2 py-1 rounded-full text-xs font-semibold ${u.role === 'ADMIN' ? 'bg-purple-100 text-purple-800' : u.role === 'INSTRUCTOR' ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800'}`}>
-                          {u.role}
-                        </span>
+                         <Badge color={u.role === 'ADMIN' ? 'red' : u.role === 'INSTRUCTOR' ? 'blue' : 'green'}>{u.role}</Badge>
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-500 flex items-center gap-3 whitespace-nowrap">
                         <select 
-                          className="border border-gray-300 rounded text-xs p-1"
+                          className="border border-gray-300 rounded-md text-xs p-1.5 bg-gray-50 hover:bg-white transition-colors focus:ring-2 focus:ring-indigo-500 outline-none"
                           value={u.role}
                           onChange={(e) => handleRoleChange(u.id, e.target.value as UserRole)}
                           disabled={u.email === 'admin@zero.com'}
@@ -157,7 +161,7 @@ export const AdminView: React.FC<{ showToast: (m: string, t: any) => void }> = (
                            <option value="INSTRUCTOR">Instructor</option>
                            <option value="ADMIN">Admin</option>
                         </select>
-                        <button onClick={() => viewUserActivity(u)} className="text-blue-600 hover:text-blue-800 text-xs font-medium flex items-center gap-1">
+                        <button onClick={() => viewUserActivity(u)} className="text-blue-600 hover:text-blue-800 text-xs font-bold uppercase tracking-wide flex items-center gap-1">
                             <Activity size={14} /> Logs
                         </button>
                       </td>
@@ -167,8 +171,10 @@ export const AdminView: React.FC<{ showToast: (m: string, t: any) => void }> = (
               </tbody>
             </table>
           </div>
-          <Pagination currentPage={currentPage} totalPages={totalPages} onPageChange={setCurrentPage} />
-        </Card>
+          <div className="p-4 border-t border-gray-100">
+             <Pagination currentPage={currentPage} totalPages={totalPages} onPageChange={setCurrentPage} />
+          </div>
+        </div>
       )}
 
       {activeTab === 'courses' && (
@@ -177,9 +183,9 @@ export const AdminView: React.FC<{ showToast: (m: string, t: any) => void }> = (
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Course Title</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Price</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                  <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Course Title</th>
+                  <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Price</th>
+                  <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Actions</th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
@@ -239,21 +245,20 @@ export const AdminView: React.FC<{ showToast: (m: string, t: any) => void }> = (
           </Card>
       )}
 
-      {/* Activity Modal via Shared Component */}
       <Modal isOpen={showActivityModal} onClose={() => setShowActivityModal(false)} title={`Activity Log: ${selectedUser?.name}`}>
           {selectedUser && (
              <>
                 {selectedUser.role === 'INSTRUCTOR' && (
-                    <div className="mb-4 p-3 bg-blue-50 rounded border border-blue-100 text-sm">
+                    <div className="mb-4 p-3 bg-blue-50 rounded-lg border border-blue-100 text-sm">
                         <p><strong>Qualification:</strong> {selectedUser.instructorProfile?.qualification || 'N/A'}</p>
                         <p><strong>Experience:</strong> {selectedUser.instructorProfile?.experience || 'N/A'}</p>
                     </div>
                 )}
-                <div className="space-y-2">
+                <div className="space-y-2 max-h-[400px] overflow-y-auto">
                     {(selectedUser.activityLog || []).slice().reverse().map((log, idx) => (
-                        <div key={idx} className="text-xs border-l-2 border-gray-300 pl-2 py-1">
-                            <span className="font-mono text-gray-500">{new Date(log.date).toLocaleString()}</span>
-                            <p className="font-medium text-gray-800">{log.action} <span className="font-normal text-gray-600">{log.details ? `- ${log.details}` : ''}</span></p>
+                        <div key={idx} className="text-xs border-l-2 border-gray-300 pl-3 py-2 hover:bg-gray-50 transition-colors rounded-r">
+                            <span className="font-mono text-gray-400 block mb-0.5">{new Date(log.date).toLocaleString()}</span>
+                            <p className="font-bold text-gray-800">{log.action} <span className="font-normal text-gray-600">{log.details ? `- ${log.details}` : ''}</span></p>
                         </div>
                     ))}
                 </div>

@@ -93,7 +93,6 @@ export const storageService = {
     return formatCourse(await res.json());
   },
   updateCourse: async (id: string, updates: Partial<Course>, userName?: string) => {
-    // Strip ID fields to prevent immutable error
     const { id: _id, ...cleanUpdates } = updates as any;
     const payload = { ...cleanUpdates, lastEditedBy: userName };
     await fetch(`${API_URL}/courses/${id}`, { method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload) });
@@ -106,7 +105,6 @@ export const storageService = {
     const formData = new FormData();
     formData.append('file', file);
     formData.append('upload_preset', preset);
-    formData.append('resource_type', 'auto');
     
     const isImage = file.type.startsWith('image/');
     const resourceType = isImage ? 'image' : 'raw';
@@ -124,11 +122,7 @@ export const storageService = {
   addMaterial: async (cid: string, mat: CourseMaterial) => {
     const safeMat = { ...mat, uploadedAt: new Date().toISOString() };
     const res = await fetch(`${API_URL}/courses/${cid}/materials`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(safeMat) });
-    if (!res.ok) {
-        const err = await res.text();
-        if (res.status === 404) throw new Error('Route not found. Restart Server.');
-        throw new Error(err || 'Failed to upload');
-    }
+    if (!res.ok) throw new Error((await res.text()) || 'Failed to upload');
   },
   deleteMaterial: async (cid: string, mid: string) => {
     await fetch(`${API_URL}/courses/${cid}/materials/${mid}`, { method: 'DELETE' });
@@ -141,6 +135,9 @@ export const storageService = {
   },
   deleteSchedule: async (cid: string, sid: string) => {
     await fetch(`${API_URL}/courses/${cid}/schedules/${sid}`, { method: 'DELETE' });
+  },
+  joinSchedule: async (cid: string, sid: string, studentId: string) => {
+      await fetch(`${API_URL}/courses/${cid}/schedules/${sid}/join`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ studentId }) });
   },
   toggleProgress: async (uid: string, cid: string, mid: string) => {
     const res = await fetch(`${API_URL}/users/${uid}/progress`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ courseId: cid, materialId: mid }) });

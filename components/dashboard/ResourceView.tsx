@@ -1,9 +1,8 @@
-
 import React, { useState, useEffect } from 'react';
 import { User, UserRole, Course } from '../../types';
 import { storageService } from '../../services/storage';
-import { Card, Skeleton, Button } from '../ui/Shared';
-import { FileText, Download } from 'lucide-react';
+import { Card, Skeleton, Button, PageHeader } from '../ui/Shared';
+import { FileText, Download, FolderOpen } from 'lucide-react';
 
 export const ResourceView: React.FC<{ user: User }> = ({ user }) => {
   const [courses, setCourses] = useState<Course[]>([]);
@@ -48,41 +47,57 @@ export const ResourceView: React.FC<{ user: User }> = ({ user }) => {
   if (loading) return <div className="p-4"><Skeleton className="h-96 w-full" /></div>;
 
   return (
-    <div className="space-y-6">
-      <div className="bg-blue-50 border-l-4 border-blue-500 p-4 rounded-r shadow-sm">
-        <h2 className="text-xl font-bold text-blue-900">Shared Course Resources</h2>
-        <p className="text-blue-700 text-sm">Access, download, and review materials for your courses.</p>
-      </div>
+    <div>
+      <PageHeader 
+        title="Shared Resource Library" 
+        description="Access downloadable materials, lecture notes, and reference documents from your courses."
+        theme="blue"
+        icon={<FolderOpen className="text-white" size={24} />}
+        imageSrc="https://images.unsplash.com/photo-1524995997946-a1c2e315a42f?auto=format&fit=crop&q=80"
+      />
 
       {(courses || []).length === 0 ? (
-        <p className="text-center text-gray-500 py-10">No courses or materials found.</p>
+        <div className="text-center py-16 bg-white rounded-xl border border-dashed border-gray-200">
+            <FolderOpen className="mx-auto h-12 w-12 text-gray-300 mb-4" />
+            <p className="text-gray-500 text-lg">No resources available.</p>
+        </div>
       ) : (
-        <div className="grid gap-6">
+        <div className="grid gap-8">
           {(courses || []).map(c => (
-            <Card key={c.id} title={c.title} className="overflow-hidden">
-              <div className="space-y-3 overflow-x-auto">
+            <div key={c.id} className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+              <div className="bg-gray-50/50 px-6 py-4 border-b border-gray-100 flex justify-between items-center">
+                 <h3 className="font-bold text-lg text-gray-800">{c.title}</h3>
+                 <span className="text-xs font-medium text-gray-500 bg-white px-2 py-1 rounded border border-gray-200">{c.materials?.length || 0} Files</span>
+              </div>
+              
+              <div className="p-6">
+                <div className="grid gap-3">
                 {(!c.materials || c.materials.length === 0) ? (
                    <p className="text-sm text-gray-400 italic">No materials uploaded by instructor yet.</p>
                 ) : (
                   c.materials.map(m => (
-                    <div key={m.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors border border-gray-100 min-w-[300px]">
-                      <div className="flex items-center gap-3">
-                        <div className="p-2 bg-white rounded border border-gray-200 text-primary-500">
+                    <div key={m.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-white rounded-lg border border-gray-200 hover:border-indigo-300 hover:shadow-md transition-all gap-4 group">
+                      <div className="flex items-start gap-4">
+                        <div className="p-2.5 bg-indigo-50 text-indigo-600 rounded-lg border border-indigo-100 group-hover:bg-indigo-600 group-hover:text-white transition-colors">
                           <FileText size={20} />
                         </div>
                         <div>
-                          <p className="font-medium text-gray-800 text-sm">{m.title}</p>
-                          <p className="text-xs text-gray-500">{new Date(m.uploadedAt).toLocaleDateString()} • {m.type}</p>
+                          <p className="font-bold text-gray-800 text-sm mb-1">{m.title}</p>
+                          <div className="flex items-center gap-2 text-xs text-gray-500">
+                             <span className="uppercase bg-gray-100 px-1.5 py-0.5 rounded font-bold">{m.type}</span>
+                             <span>• {new Date(m.uploadedAt).toLocaleDateString()}</span>
+                          </div>
                         </div>
                       </div>
-                      <Button variant="outline" className="text-xs py-1 px-3 h-8" onClick={() => handleDownload(m.url)}>
-                        <Download size={14} className="mr-1 inline" /> Download
+                      <Button variant="outline" className="w-full sm:w-auto whitespace-nowrap text-xs" onClick={() => handleDownload(m.url)}>
+                        <Download size={14} className="mr-2 inline" /> Download
                       </Button>
                     </div>
                   ))
                 )}
+                </div>
               </div>
-            </Card>
+            </div>
           ))}
         </div>
       )}

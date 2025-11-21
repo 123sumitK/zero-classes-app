@@ -58,6 +58,11 @@ const MaterialSchema = new mongoose.Schema({
   uploadedAt: { type: String, required: true } 
 }, { _id: false }); 
 
+const AttendanceSchema = new mongoose.Schema({
+  studentId: String,
+  joinedAt: { type: Date, default: Date.now }
+}, { _id: false });
+
 const ScheduleSchema = new mongoose.Schema({
   id: { type: String, required: true },
   courseId: { type: String, required: true },
@@ -66,7 +71,8 @@ const ScheduleSchema = new mongoose.Schema({
   date: { type: String, required: true },
   time: { type: String, required: true },
   meetingUrl: { type: String, default: '' },
-  instructorName: String
+  instructorName: String,
+  attendance: [AttendanceSchema]
 }, { _id: false });
 
 const QuestionSchema = new mongoose.Schema({
@@ -258,7 +264,6 @@ app.post('/api/auth/register', async (req, res) => {
 app.post('/api/auth/login', async (req, res) => {
   try {
     const { email, password } = req.body;
-    // Find and update activity log atomically
     const user = await User.findOneAndUpdate(
       { email, password },
       { $push: { activityLog: { action: 'LOGIN', date: new Date() } } },
@@ -308,7 +313,6 @@ app.post('/api/users/:id/progress', async (req, res) => {
       currentList.push(materialId);
     }
     user.progress.set(courseId, currentList);
-    // Track activity
     user.activityLog.push({ action: 'STUDY_PROGRESS', date: new Date(), details: `Toggled material ${materialId}` });
     await user.save();
     res.json(Object.fromEntries(user.progress));
@@ -354,7 +358,6 @@ app.post('/api/courses', async (req, res) => {
         createdAt: new Date(),
         updatedAt: new Date()
     });
-    // Log creation
     await User.findByIdAndUpdate(courseData.instructorId, { 
        $push: { activityLog: { action: 'CREATE_COURSE', date: new Date(), details: course.title } } 
     });
@@ -365,7 +368,6 @@ app.post('/api/courses', async (req, res) => {
 app.put('/api/courses/:id', async (req, res) => {
   try {
     const { _id, id, createdBy, createdAt, ...updates } = req.body;
-    // Only update allowed fields, preserve creation info
     const course = await Course.findByIdAndUpdate(req.params.id, {
         ...updates,
         updatedAt: new Date()
@@ -400,6 +402,25 @@ app.post('/api/courses/:id/schedules', async (req, res) => {
   try {
     const course = await Course.findByIdAndUpdate(req.params.id, { $push: { schedules: req.body } }, { new: true });
     res.json(course);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ATTENDANCE Tracking
+app.post('/api/courses/:id/schedules/:schedId/join', async (req, res) => {
+  try {
+    const { studentId } = req.body;
+    // Remove existing attendance for this student to prevent duplicates (optional)
+    await Course.findOneAndUpdate(
+      { "schedules.id": req.params.schedId },
+      { $pull: { "schedules.$.attendance": { studentId } } }
+    );
+    // Add new attendance record
+    const course = await Course.findOneAndUpdate(
+      { "schedules.id": req.params.schedId },
+      { $push: { "schedules.$.attendance": { studentId, joinedAt: new Date() } } },
+      { new: true }
+    );
+    res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -500,7 +521,6 @@ app.post('/api/submissions', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// Grading & Feedback
 app.put('/api/submissions/:id/grade', async (req, res) => {
   try {
     const { grade, feedback } = req.body;

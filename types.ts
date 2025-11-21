@@ -2,10 +2,27 @@
 export enum UserRole {
   STUDENT = 'STUDENT',
   INSTRUCTOR = 'INSTRUCTOR',
-  ADMIN = 'ADMIN'
+  // Admin Roles
+  SUPER_ADMIN = 'SUPER_ADMIN',
+  ADMIN = 'ADMIN', // General Admin
+  CONTENT_MGR = 'CONTENT_MGR',
+  FINANCE = 'FINANCE',
+  SUPPORT = 'SUPPORT',
+  ANALYTICS = 'ANALYTICS'
 }
 
 export type ThemeOption = 'bright' | 'light-bright' | 'dark';
+
+export const ROLE_PERMISSIONS = {
+  [UserRole.SUPER_ADMIN]: { users: ['view','edit','delete'], courses: ['create','publish','approve'], finance: ['view','refund','payout'], support: ['view','reply'], settings: ['edit'], logs: ['view'] },
+  [UserRole.ADMIN]:       { users: ['view','edit'], courses: ['create','publish','approve'], finance: ['view','refund'], support: ['view','reply'], settings: ['view'], logs: ['view'] },
+  [UserRole.CONTENT_MGR]: { users: ['view','edit'], courses: ['create','publish','approve'], finance: [], support: [], settings: [], logs: [] },
+  [UserRole.INSTRUCTOR]:  { users: ['view'], courses: ['create'], finance: [], support: [], settings: [], logs: [] }, // Limited view
+  [UserRole.FINANCE]:     { users: ['view'], courses: [], finance: ['view','refund','payout'], support: [], settings: [], logs: [] },
+  [UserRole.SUPPORT]:     { users: ['view'], courses: [], finance: [], support: ['view','reply'], settings: [], logs: [] },
+  [UserRole.ANALYTICS]:   { users: ['view'], courses: [], finance: ['view'], support: [], settings: [], logs: [] },
+  [UserRole.STUDENT]:     { users: [], courses: [], finance: [], support: [], settings: [], logs: [] }
+};
 
 export interface PlatformSettings {
   copyrightText: string;
@@ -28,6 +45,7 @@ export interface ActivityLog {
   action: string;
   date: string;
   details?: string;
+  ip?: string;
 }
 
 export interface User {
@@ -44,6 +62,8 @@ export interface User {
   countryCode?: string;
   instructorProfile?: InstructorProfile;
   activityLog?: ActivityLog[];
+  mfaEnabled?: boolean;
+  lastLogin?: string;
 }
 
 export interface CourseMaterial {
@@ -52,6 +72,11 @@ export interface CourseMaterial {
   type: 'PDF' | 'DOCX' | 'PPT' | 'OTHER';
   url: string;
   uploadedAt: string;
+}
+
+export interface AttendanceRecord {
+  studentId: string;
+  joinedAt: string;
 }
 
 export interface ClassSchedule {
@@ -63,6 +88,7 @@ export interface ClassSchedule {
   time: string;
   meetingUrl: string;
   instructorName?: string; 
+  attendance?: AttendanceRecord[]; 
 }
 
 export interface Question {
@@ -124,9 +150,32 @@ export interface Course {
   thumbnailUrl?: string;
   materials: CourseMaterial[];
   schedules: ClassSchedule[];
+  status: 'draft' | 'pending' | 'published'; // Added status
   createdBy?: string;
   lastEditedBy?: string;
   updatedAt?: string;
+}
+
+export interface SupportTicket {
+  id: string;
+  userId: string;
+  userName: string;
+  subject: string;
+  message: string;
+  status: 'open' | 'in-progress' | 'resolved';
+  priority: 'low' | 'medium' | 'high';
+  createdAt: string;
+}
+
+export interface DashboardStats {
+  activeStudents: number;
+  newSignups24h: number;
+  totalRevenue: number;
+  revenueMTD: number;
+  pendingApprovals: number;
+  liveClassesNow: number;
+  openTickets: number;
+  revenueTrend: number[]; // Last 7 days
 }
 
 export interface ToastMessage {
