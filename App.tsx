@@ -12,6 +12,7 @@ import { ResourceView } from './components/dashboard/ResourceView';
 import { AIChat } from './components/features/AIChat';
 import { ProfileManager } from './components/features/ProfileManager';
 import { ToastContainer } from './components/ui/Shared';
+import { Footer } from './components/layout/Footer';
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -86,7 +87,7 @@ export default function App() {
   };
 
   return (
-    <div className={`min-h-screen flex flex-col transition-colors duration-300 ${getThemeClass()}`}>
+    <div className={`h-screen flex flex-col transition-colors duration-300 overflow-hidden ${getThemeClass()}`}>
       <Navbar 
         user={user} 
         onLogout={handleLogout} 
@@ -94,18 +95,22 @@ export default function App() {
         goHome={() => setView('landing')}
       />
       
-      <div className="flex flex-1 relative">
+      <div className="flex flex-1 overflow-hidden relative">
         {user && (
           <Sidebar 
             user={user} 
             currentView={view} 
             setView={(v) => { setView(v); setSidebarOpen(false); }} 
             isOpen={sidebarOpen} 
+            onClose={() => setSidebarOpen(false)}
           />
         )}
 
-        <main className={`flex-1 p-4 lg:p-8 w-full max-w-7xl mx-auto overflow-x-hidden ${!user ? 'flex items-center justify-center' : ''}`}>
-          {renderContent()}
+        <main className={`flex-1 flex flex-col w-full overflow-y-auto scroll-smooth ${!user ? 'items-center justify-center' : ''}`}>
+          <div className="p-4 lg:p-8 max-w-7xl mx-auto w-full flex-1">
+              {renderContent()}
+          </div>
+          {user && <Footer />}
         </main>
       </div>
 

@@ -1,5 +1,5 @@
 
-import { User, Course, UserRole, ClassSchedule, CourseMaterial, Quiz, QuizResult, Assignment, Submission } from '../types';
+import { User, Course, UserRole, ClassSchedule, CourseMaterial, Quiz, QuizResult, Assignment, Submission, PlatformSettings } from '../types';
 
 const getApiUrl = () => {
   try {
@@ -33,6 +33,17 @@ const formatCourse = (c: any): Course => ({
 });
 
 export const storageService = {
+  // --- SETTINGS ---
+  getPlatformSettings: async (): Promise<PlatformSettings> => {
+    try {
+        const res = await fetch(`${API_URL}/settings`);
+        return await res.json();
+    } catch(e) { return { copyrightText: '', version: '', socialLinks: {} } as PlatformSettings; }
+  },
+  updatePlatformSettings: async (settings: Partial<PlatformSettings>) => {
+    await fetch(`${API_URL}/settings`, { method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(settings) });
+  },
+
   // --- AUTH ---
   sendOTP: async (target: string, type: 'email' | 'mobile') => {
     const res = await fetch(`${API_URL}/auth/send-otp`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ target, type }) });

@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { User, UserRole, Course, Assignment, Submission } from '../../types';
 import { storageService } from '../../services/storage';
-import { Button, Input, Card, Select, Skeleton, AuditTag } from '../ui/Shared';
+import { Button, Input, Card, Select, Skeleton, AuditTag, Modal } from '../ui/Shared';
 import { Plus, Trash2, FileText, Upload, Download, CheckCircle, Loader2, MessageSquare, Star, ThumbsUp, ThumbsDown, Heart } from 'lucide-react';
 
 // Cloudinary constants
@@ -44,7 +44,6 @@ export const AssignmentManager: React.FC<AssignmentManagerProps> = ({ user, cour
     const data = await storageService.getAssignments(courseId);
     setAssignments(data);
     
-    // For each assignment, fetch submissions if instructor, or my submission if student
     const subs: Record<string, Submission[]> = {};
     for (const a of data) {
       const allSubs = await storageService.getSubmissions(a.id);
@@ -100,10 +99,10 @@ export const AssignmentManager: React.FC<AssignmentManagerProps> = ({ user, cour
     }
   };
 
-  const handleGradeSubmit = async (subId: string) => {
-    if (!gradeValue || !feedbackValue) return showToast('Grade and Feedback required', 'error');
+  const handleGradeSubmit = async () => {
+    if (!gradingId || !gradeValue || !feedbackValue) return showToast('Grade and Feedback required', 'error');
     try {
-      await storageService.gradeSubmission(subId, parseFloat(gradeValue), feedbackValue);
+      await storageService.gradeSubmission(gradingId, parseFloat(gradeValue), feedbackValue);
       showToast('Feedback submitted', 'success');
       setGradingId(null);
       fetchData();
@@ -190,18 +189,7 @@ export const AssignmentManager: React.FC<AssignmentManagerProps> = ({ user, cour
                                 <Download size={14} /> View PDF
                               </a>
 
-                              {/* Grading UI */}
-                              {gradingId === sub.id ? (
-                                <div className="bg-white p-3 rounded border border-blue-200 space-y-2">
-                                   <Input type="number" placeholder="Grade (0-100)" value={gradeValue} onChange={e => setGradeValue(e.target.value)} className="mb-0" />
-                                   <textarea className="w-full border rounded p-2 text-sm" placeholder="Feedback..." value={feedbackValue} onChange={e => setFeedbackValue(e.target.value)} />
-                                   <div className="flex gap-2">
-                                     <Button size="sm" onClick={() => handleGradeSubmit(sub.id)}>Submit Feedback</Button>
-                                     <Button size="sm" variant="secondary" onClick={() => setGradingId(null)}>Cancel</Button>
-                                   </div>
-                                </div>
-                              ) : (
-                                <div className="mt-2">
+                              <div className="mt-2">
                                   {sub.grade ? (
                                     <div className="bg-green-50 p-2 rounded border border-green-100">
                                        <p className="font-bold text-green-800">Grade: {sub.grade}/100</p>
@@ -216,7 +204,6 @@ export const AssignmentManager: React.FC<AssignmentManagerProps> = ({ user, cour
                                     </Button>
                                   )}
                                 </div>
-                              )}
                            </div>
                          ))}
                        </div>
@@ -267,6 +254,18 @@ export const AssignmentManager: React.FC<AssignmentManagerProps> = ({ user, cour
           );
         })}
       </div>
+
+      {/* Grading Modal */}
+      <Modal isOpen={!!gradingId} onClose={() => setGradingId(null)} title="Grade Submission">
+        <div className="space-y-4">
+           <Input type="number" label="Grade (0-100)" value={gradeValue} onChange={e => setGradeValue(e.target.value)} />
+           <div>
+               <label className="block text-sm font-medium text-gray-700 mb-1">Feedback</label>
+               <textarea className="w-full border rounded p-2 text-sm" rows={4} placeholder="Enter constructive feedback..." value={feedbackValue} onChange={e => setFeedbackValue(e.target.value)} />
+           </div>
+           <Button onClick={handleGradeSubmit} className="w-full">Submit Grade</Button>
+        </div>
+      </Modal>
     </div>
   );
 };

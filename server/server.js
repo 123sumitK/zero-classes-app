@@ -28,6 +28,7 @@ const connectDB = async () => {
     await mongoose.connect(uri);
     console.log('✅ MongoDB Connected Successfully');
     seedAdmin();
+    seedSettings();
   } catch (err) {
     console.error('❌ MongoDB Critical Connection Error:', err.message);
   }
@@ -37,6 +38,18 @@ mongoose.connection.on('disconnected', () => console.log('⚠️ MongoDB Disconn
 mongoose.connection.on('error', (err) => console.error('💥 MongoDB Error:', err));
 
 // --- SCHEMAS ---
+const SettingsSchema = new mongoose.Schema({
+  type: { type: String, default: 'general', unique: true },
+  copyrightText: String,
+  version: String,
+  socialLinks: {
+    twitter: String,
+    facebook: String,
+    linkedin: String,
+    instagram: String
+  }
+});
+
 const MaterialSchema = new mongoose.Schema({
   id: { type: String, required: true },
   title: { type: String, required: true },
@@ -148,6 +161,7 @@ const Quiz = mongoose.model('Quiz', QuizSchema);
 const QuizResult = mongoose.model('QuizResult', QuizResultSchema);
 const Assignment = mongoose.model('Assignment', AssignmentSchema);
 const Submission = mongoose.model('Submission', SubmissionSchema);
+const Settings = mongoose.model('Settings', SettingsSchema);
 
 const seedAdmin = async () => {
   try {
@@ -165,6 +179,18 @@ const seedAdmin = async () => {
   } catch (e) { console.error('Admin Seed Error:', e); }
 };
 
+const seedSettings = async () => {
+    try {
+        const s = await Settings.findOne({ type: 'general' });
+        if (!s) await Settings.create({ 
+            type: 'general', 
+            copyrightText: '© 2025 Zero Classes. All rights reserved.',
+            version: '1.0.0',
+            socialLinks: {}
+        });
+    } catch(e) {}
+};
+
 connectDB();
 
 // --- OTP STORAGE (Memory) ---
@@ -174,6 +200,21 @@ const otpStore = {};
 
 app.get('/', (req, res) => {
   res.send('✅ Zero Classes API is running successfully!');
+});
+
+// Settings
+app.get('/api/settings', async (req, res) => {
+    try {
+        const s = await Settings.findOne({ type: 'general' });
+        res.json(s || {});
+    } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.put('/api/settings', async (req, res) => {
+    try {
+        const s = await Settings.findOneAndUpdate({ type: 'general' }, req.body, { new: true, upsert: true });
+        res.json(s);
+    } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
 // Auth

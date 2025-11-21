@@ -2,13 +2,13 @@
 import React, { useState, useEffect } from 'react';
 import { User, UserRole, Course, Quiz, Question, QuizResult } from '../../types';
 import { storageService } from '../../services/storage';
-import { Button, Input, Card, Select, AuditTag } from '../ui/Shared';
-import { Plus, Trash2, Clock, CheckCircle, XCircle, Play, Award, ChevronDown, ChevronUp, Flag, ArrowLeft, ArrowRight, Grid } from 'lucide-react';
+import { Button, Input, Card, Select, AuditTag, Modal } from '../ui/Shared';
+import { Plus, Trash2, Clock, CheckCircle, XCircle, Play, Award, ChevronDown, ChevronUp, Flag, ArrowLeft, ArrowRight, Grid, X, PieChart } from 'lucide-react';
 
 interface QuizManagerProps {
   user: User;
   courses: Course[];
-  courseIdFilter?: string; // Optional: only show quizzes for this course
+  courseIdFilter?: string;
   showToast: (m: string, t: any) => void;
 }
 
@@ -26,7 +26,7 @@ export const QuizManager: React.FC<QuizManagerProps> = ({ user, courses, courseI
   // Student Take
   const [activeQuiz, setActiveQuiz] = useState<Quiz | null>(null);
   const [currentQIndex, setCurrentQIndex] = useState(0);
-  const [answers, setAnswers] = useState<Record<number, number>>({}); // qIndex -> optionIndex
+  const [answers, setAnswers] = useState<Record<number, number>>({}); 
   const [markedForReview, setMarkedForReview] = useState<number[]>([]);
   const [timeLeft, setTimeLeft] = useState(0);
   const [quizResult, setQuizResult] = useState<QuizResult | null>(null);
@@ -38,7 +38,6 @@ export const QuizManager: React.FC<QuizManagerProps> = ({ user, courses, courseI
 
   const fetchQuizzes = async () => {
     const data = await storageService.getQuizzes();
-    // If filter provided (Student View), filter them. If Instructor, show all but we will categorize them in UI.
     if (courseIdFilter) {
       setQuizzes(data.filter(q => q.courseId === courseIdFilter));
     } else {
@@ -144,6 +143,12 @@ export const QuizManager: React.FC<QuizManagerProps> = ({ user, courses, courseI
     }
   };
 
+  const closeQuiz = () => {
+      if (window.confirm('Exit quiz? Progress will be lost.')) {
+          setActiveQuiz(null);
+      }
+  };
+
   // --- RENDER INSTRUCTOR VIEW ---
   if (user.role === UserRole.INSTRUCTOR || user.role === UserRole.ADMIN) {
     return (
@@ -207,7 +212,6 @@ export const QuizManager: React.FC<QuizManagerProps> = ({ user, courses, courseI
         )}
 
         <div className="space-y-4">
-          {/* Group Quizzes by Course */}
           {courses.map(course => {
              const courseQuizzes = quizzes.filter(q => q.courseId === course.id);
              if (courseQuizzes.length === 0) return null;
@@ -251,13 +255,26 @@ export const QuizManager: React.FC<QuizManagerProps> = ({ user, courses, courseI
 
   // FULL SCREEN TAKING MODE
   if (activeQuiz && !quizResult) {
+    const answeredCount = Object.keys(answers).length;
+    const reviewedCount = markedForReview.length;
+    
     return (
       <div className="fixed inset-0 z-50 bg-gray-100 flex flex-col">
         {/* Header */}
-        <div className="bg-white shadow px-6 py-4 flex justify-between items-center">
-          <h2 className="text-xl font-bold text-gray-800">{activeQuiz.title}</h2>
-          <div className={`flex items-center gap-2 font-mono font-bold text-lg ${timeLeft < 60 ? 'text-red-600 animate-pulse' : 'text-gray-700'}`}>
-            <Clock size={20} /> {formatTime(timeLeft)}
+        <div className="bg-white shadow px-6 py-3 flex justify-between items-center shrink-0">
+          <div>
+              <h2 className="text-lg font-bold text-gray-800">{activeQuiz.title}</h2>
+              <div className="flex gap-4 text-xs text-gray-500 mt-1">
+                  <span className="flex items-center gap-1"><CheckCircle size={12} className="text-green-500" /> Answered: {answeredCount}</span>
+                  <span className="flex items-center gap-1"><Flag size={12} className="text-yellow-500" /> Review: {reviewedCount}</span>
+                  <span className="flex items-center gap-1"><PieChart size={12} className="text-blue-500" /> Remaining: {activeQuiz.questions.length - answeredCount}</span>
+              </div>
+          </div>
+          <div className="flex items-center gap-4">
+              <div className={`flex items-center gap-2 font-mono font-bold text-lg ${timeLeft < 60 ? 'text-red-600 animate-pulse' : 'text-gray-700'}`}>
+                <Clock size={20} /> {formatTime(timeLeft)}
+              </div>
+              <button onClick={closeQuiz} className="text-gray-400 hover:text-red-500 transition-colors"><X size={24} /></button>
           </div>
         </div>
 
@@ -332,7 +349,10 @@ export const QuizManager: React.FC<QuizManagerProps> = ({ user, courses, courseI
 
           {/* Question Palette Sidebar */}
           <div className={`w-72 bg-gray-50 border-l p-6 overflow-y-auto ${showPalette ? 'block absolute right-0 inset-y-0 z-40 shadow-xl' : 'hidden md:block'}`}>
-             <h4 className="font-bold text-gray-700 mb-4">Question Palette</h4>
+             <div className="flex justify-between items-center mb-4">
+                 <h4 className="font-bold text-gray-700">Question Palette</h4>
+                 {showPalette && <button onClick={() => setShowPalette(false)}><X size={16} /></button>}
+             </div>
              <div className="grid grid-cols-4 gap-2">
                {activeQuiz.questions.map((_, idx) => {
                  let statusClass = 'bg-white border-gray-300 text-gray-600'; // Unvisited
@@ -343,7 +363,7 @@ export const QuizManager: React.FC<QuizManagerProps> = ({ user, courses, courseI
                  return (
                    <button
                      key={idx}
-                     onClick={() => setCurrentQIndex(idx)}
+                     onClick={() => { setCurrentQIndex(idx); setShowPalette(false); }}
                      className={`h-10 w-10 rounded flex items-center justify-center text-sm font-medium border ${statusClass}`}
                    >
                      {idx + 1}
@@ -407,7 +427,7 @@ export const QuizManager: React.FC<QuizManagerProps> = ({ user, courses, courseI
      );
   }
 
-  // DEFAULT LIST VIEW (Student)
+  // DEFAULT LIST VIEW
   return (
     <div className="grid md:grid-cols-2 gap-4">
       {quizzes.length === 0 && <p className="text-gray-500 col-span-2 text-center py-8 italic">No quizzes available for this course yet.</p>}

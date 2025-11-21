@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { AlertCircle, CheckCircle, Info, X, Check, User, Edit3 } from 'lucide-react';
+import { AlertCircle, CheckCircle, Info, X, Check, User, Edit3, ChevronLeft, ChevronRight, Search } from 'lucide-react';
 import { ToastMessage, UserRole } from '../../types';
 
 // --- BUTTON ---
@@ -38,6 +38,18 @@ export const Input: React.FC<InputProps> = ({ label, className = '', ...props })
     {label && <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>}
     <input
       className={`w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-primary-500 focus:border-primary-500 disabled:bg-gray-100 disabled:text-gray-500 ${className}`}
+      {...props}
+    />
+  </div>
+);
+
+// --- SEARCH INPUT ---
+export const SearchInput: React.FC<React.InputHTMLAttributes<HTMLInputElement>> = ({ className = '', ...props }) => (
+  <div className={`relative ${className}`}>
+    <Search className="absolute left-3 top-2.5 text-gray-400 w-4 h-4" />
+    <input
+      className="w-full pl-9 pr-4 py-2 border border-gray-300 rounded-full shadow-sm focus:ring-primary-500 focus:border-primary-500 text-sm"
+      placeholder="Search..."
       {...props}
     />
   </div>
@@ -87,6 +99,63 @@ export const Card: React.FC<CardProps> = ({ children, className = '', title, ...
     {children}
   </div>
 );
+
+// --- MODAL ---
+interface ModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  title?: string;
+  children: React.ReactNode;
+}
+export const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children }) => {
+  if (!isOpen) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[85vh] overflow-hidden flex flex-col relative animate-in zoom-in-95 duration-200">
+        <div className="flex justify-between items-center p-4 border-b border-gray-100">
+          {title && <h3 className="font-bold text-lg text-gray-800">{title}</h3>}
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors">
+            <X size={20} />
+          </button>
+        </div>
+        <div className="p-6 overflow-y-auto">
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// --- PAGINATION ---
+interface PaginationProps {
+  currentPage: number;
+  totalPages: number;
+  onPageChange: (page: number) => void;
+}
+export const Pagination: React.FC<PaginationProps> = ({ currentPage, totalPages, onPageChange }) => {
+  if (totalPages <= 1) return null;
+  return (
+    <div className="flex items-center justify-center gap-2 mt-4">
+      <button 
+        onClick={() => onPageChange(currentPage - 1)}
+        disabled={currentPage === 1}
+        className="p-1 rounded hover:bg-gray-100 disabled:opacity-30"
+      >
+        <ChevronLeft size={20} />
+      </button>
+      <span className="text-sm font-medium text-gray-600">
+        Page {currentPage} of {totalPages}
+      </span>
+      <button 
+        onClick={() => onPageChange(currentPage + 1)}
+        disabled={currentPage === totalPages}
+        className="p-1 rounded hover:bg-gray-100 disabled:opacity-30"
+      >
+        <ChevronRight size={20} />
+      </button>
+    </div>
+  );
+};
 
 // --- SKELETON ---
 export const Skeleton: React.FC<{ className?: string }> = ({ className = "" }) => (

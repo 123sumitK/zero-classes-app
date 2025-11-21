@@ -7,6 +7,17 @@ export enum UserRole {
 
 export type ThemeOption = 'bright' | 'light-bright' | 'dark';
 
+export interface PlatformSettings {
+  copyrightText: string;
+  version: string;
+  socialLinks: {
+    twitter?: string;
+    facebook?: string;
+    linkedin?: string;
+    instagram?: string;
+  };
+}
+
 export interface InstructorProfile {
   qualification: string;
   experience: string;

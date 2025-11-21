@@ -59,13 +59,13 @@ export const ResourceView: React.FC<{ user: User }> = ({ user }) => {
       ) : (
         <div className="grid gap-6">
           {(courses || []).map(c => (
-            <Card key={c.id} title={c.title}>
-              <div className="space-y-3">
+            <Card key={c.id} title={c.title} className="overflow-hidden">
+              <div className="space-y-3 overflow-x-auto">
                 {(!c.materials || c.materials.length === 0) ? (
                    <p className="text-sm text-gray-400 italic">No materials uploaded by instructor yet.</p>
                 ) : (
                   c.materials.map(m => (
-                    <div key={m.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors border border-gray-100">
+                    <div key={m.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors border border-gray-100 min-w-[300px]">
                       <div className="flex items-center gap-3">
                         <div className="p-2 bg-white rounded border border-gray-200 text-primary-500">
                           <FileText size={20} />
